@@ -16,6 +16,12 @@
 # next.js
 /.next/
 /out/
+frontend/.next/
+
+# NestJS build output
+backend/dist/
+backend/node_modules/
+frontend/node_modules/
 
 # production
 /build
@@ -30,8 +36,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# Local environment files. Never commit credentials or connection strings.
+.env
+.env.*
+!.env.example
+!.env.*.example
 
 # vercel
 .vercel

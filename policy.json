@@ -1,0 +1,1 @@
+{"name":"Public Read","definition":"(bucket_id = 'barber-choa-media') AND (auth.role() = 'anon' OR auth.role() = 'authenticated')","insert":"authenticated","select":"anon","update":"authenticated","delete":"authenticated"}

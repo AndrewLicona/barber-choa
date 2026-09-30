@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+:root {
+  --bg-obsidian: #09090b;
+  --bg-surface: #121214;
+  --bg-card: #18181b;
+  --border-gold: rgba(212, 175, 55, 0.18);
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  
+  /* Paleta Oficial Barber Choa (Oro Metálico & Champagne) */
+  --gold-primary: #d4af37;
+  --gold-light: #f3e5ab;
+  --gold-dark: #aa8222;
+  --gold-muted: rgba(212, 175, 55, 0.12);
+}
+
+body {
+  background-color: var(--bg-obsidian);
+  color: #f4f4f5;
+  font-family: var(--font-geist-sans), -apple-system, sans-serif;
+  letter-spacing: -0.01em;
+  overflow-x: hidden;
+}
+
+/* Tipografía de lujo para títulos del logo */
+.font-luxury {
+  font-family: var(--font-playfair), Georgia, serif;
+}
+
+/* Efectos de borde dorado sutil */
+.border-gold-subtle {
+  border: 1px solid var(--border-gold);
+}
+
+.card-luxury {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-gold);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
+}
+
+.gold-gradient-text {
+  background: linear-gradient(135deg, #f7ecc2 0%, #d4af37 50%, #aa8222 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gold-button {
+  background: linear-gradient(135deg, #d4af37 0%, #c5a059 100%);
+  color: #09090b;
+  font-weight: 700;
+  transition: all 0.25s ease;
+}
+
+.gold-button:hover {
+  background: linear-gradient(135deg, #e5c358 0%, #d4af37 100%);
+  box-shadow: 0 0 20px rgba(212, 175, 55, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Barra de scroll discreta */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #d4af37;
+}

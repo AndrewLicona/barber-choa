@@ -1,36 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Choa Studio
 
-## Getting Started
+Plataforma web personalizada para un mismo local con dos experiencias operativas y visuales aisladas:
 
-First, run the development server:
+- **Barber Choa:** turnos por llegada, agenda de colaboradores y servicios de barbería.
+- **LM Nails & Spa:** portafolio visual y reservas de manicura y spa.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+El producto comparte infraestructura, pero cada negocio mantiene sus propias rutas, identidad, servicios, profesionales, galerías, agenda, permisos y administración.
+
+## Estructura
+
+```text
+barber_choa/
+├── frontend/  # Next.js: experiencia pública, paneles y portal de trabajadores
+├── backend/   # NestJS + Prisma: API, reglas de negocio y acceso a PostgreSQL
+├── PLAN_DE_DESARROLLO.md
+└── plan.md
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Desarrollo local
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Requisitos: Node.js 20.9 o superior y las variables de entorno configuradas localmente. Nunca se deben incluir credenciales activas en el repositorio.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run dev:frontend
+npm run dev:backend
+```
 
-## Learn More
+Para compilar:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run build:frontend
+npm run build:backend
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Estado y siguiente hito
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+El proyecto está en **Fase 0: saneamiento, seguridad y contrato canónico**. Antes de habilitar reservas reales se debe consolidar una única API, alinear el modelo de datos y endurecer la seguridad por negocio.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Consulta [PLAN_DE_DESARROLLO.md](PLAN_DE_DESARROLLO.md) para las fases, criterios de aceptación y división de trabajo en paralelo.

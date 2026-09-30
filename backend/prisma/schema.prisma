@@ -1,0 +1,307 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── ENUMS ──────────────────────────────────────────────────
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  WORKER_AGENDA
+  WORKER_WALKIN
+  CLIENT
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum QueueStatus {
+  WAITING
+  IN_SERVICE
+  FINISHED
+  CANCELLED
+}
+
+enum NotificationType {
+  APPOINTMENT_CONFIRMATION
+  APPOINTMENT_REMINDER
+  QUEUE_ALERT
+  MANUAL_MESSAGE
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum BusinessAccessRole {
+  SUPERADMIN
+  ADMIN
+  WORKER
+}
+
+// ─── MODELS ─────────────────────────────────────────────────
+
+model Business {
+  id            String   @id @default(uuid()) @db.Uuid
+  slug          String   @unique
+  name          String
+  business_type String   // 'barberia' | 'manicura'
+  description   String?
+  address       String?
+  phone         String?
+  instagram_url String?
+  logo_url      String?  @default("/logo_barberchoa.jpg")
+  hero_image_url String?
+  map_url       String?
+  booking_message String?
+  timezone      String   @default("America/Bogota")
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  workers         Worker[]
+  services        Service[]
+  appointments    Appointment[]
+  live_queue      LiveQueueItem[]
+  portfolio_items PortfolioItem[]
+  settings        BusinessSetting[]
+  access_grants   UserBusinessAccess[]
+
+  @@map("businesses")
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  auth_user_id  String?  @unique @db.Uuid
+  email         String   @unique
+  password_hash String
+  role          Role     @default(CLIENT)
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  worker Worker?
+  access_grants UserBusinessAccess[]
+
+  @@map("users")
+}
+
+model UserBusinessAccess {
+  id           String             @id @default(uuid()) @db.Uuid
+  user_id      String?            @db.Uuid
+  auth_user_id String             @db.Uuid
+  business_id  String?            @db.Uuid
+  role         BusinessAccessRole @default(ADMIN)
+  is_active    Boolean            @default(true)
+  created_at   DateTime           @default(now())
+  updated_at   DateTime           @updatedAt
+
+  user     User?     @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  business Business? @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@unique([auth_user_id, business_id])
+  @@index([auth_user_id, is_active])
+  @@index([business_id, role])
+  @@map("user_business_access")
+}
+
+model Worker {
+  id                   String   @id @default(uuid()) @db.Uuid
+  user_id              String?  @unique @db.Uuid
+  business_id          String   @db.Uuid
+  name                 String
+  phone                String
+  bio                  String?
+  avatar_url           String?  @default("/logo_barberchoa.jpg")
+  specialties          String[] @default([])
+  display_order        Int      @default(0)
+  is_public            Boolean  @default(true)
+  accepts_appointments Boolean  @default(true)
+  business_type        String   @default("barberia") // 'barberia' | 'manicura'
+  is_active            Boolean  @default(true)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  user                User?               @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  business            Business            @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  schedules           Schedule[]
+  schedule_exceptions ScheduleException[]
+  appointments        Appointment[]
+  live_queue_items    LiveQueueItem[]
+  portfolio_items     PortfolioItem[]
+  worker_services     WorkerService[]
+
+  @@map("workers")
+}
+
+model Service {
+  id               String   @id @default(uuid()) @db.Uuid
+  business_id      String   @db.Uuid
+  title            String
+  description      String?
+  category         String?
+  image_url        String?
+  buffer_minutes   Int      @default(0)
+  requires_appointment Boolean @default(true)
+  display_order    Int      @default(0)
+  is_public        Boolean  @default(true)
+  price            Float
+  duration_minutes Int      @default(30)
+  business_type    String   @default("barberia") // 'barberia' | 'manicura'
+  is_active        Boolean  @default(true)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  business        Business        @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  appointments    Appointment[]
+  portfolio_items PortfolioItem[]
+  worker_services WorkerService[]
+
+  @@map("services")
+}
+
+model WorkerService {
+  worker_id   String   @db.Uuid
+  service_id  String   @db.Uuid
+  created_at  DateTime @default(now())
+
+  worker  Worker  @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [service_id], references: [id], onDelete: Cascade)
+
+  @@id([worker_id, service_id])
+  @@map("worker_services")
+}
+
+model Schedule {
+  id          String  @id @default(uuid()) @db.Uuid
+  worker_id   String  @db.Uuid
+  day_of_week Int     // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+  start_time  String  @default("09:00")
+  end_time    String  @default("18:00")
+  break_start String?
+  break_end   String?
+  is_active   Boolean @default(true)
+
+  worker Worker @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+
+  @@unique([worker_id, day_of_week])
+  @@map("schedules")
+}
+
+model ScheduleException {
+  id           String   @id @default(uuid()) @db.Uuid
+  worker_id    String   @db.Uuid
+  date         DateTime @db.Date
+  is_available Boolean  @default(false)
+  start_time   String?
+  end_time     String?
+  reason       String?
+
+  worker Worker @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+
+  @@unique([worker_id, date])
+  @@map("schedule_exceptions")
+}
+
+model Appointment {
+  id               String            @id @default(uuid()) @db.Uuid
+  business_id      String            @db.Uuid
+  worker_id        String            @db.Uuid
+  service_id       String            @db.Uuid
+  client_name      String
+  client_phone     String
+  client_email     String?
+  appointment_date DateTime          @db.Date
+  start_time       String            // "14:30"
+  end_time         String            // "15:00"
+  status           AppointmentStatus @default(PENDING)
+  notes            String?
+  created_at       DateTime          @default(now())
+  updated_at       DateTime          @updatedAt
+
+  business          Business          @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  worker            Worker            @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+  service           Service           @relation(fields: [service_id], references: [id], onDelete: Cascade)
+  notification_logs NotificationLog[]
+
+  @@map("appointments")
+}
+
+model LiveQueueItem {
+  id                     String      @id @default(uuid()) @db.Uuid
+  business_id            String      @db.Uuid
+  worker_id              String      @db.Uuid
+  client_name            String
+  client_phone           String?
+  status                 QueueStatus @default(WAITING)
+  position               Int         @default(1)
+  estimated_wait_minutes Int         @default(0)
+  created_at             DateTime    @default(now())
+  updated_at             DateTime    @updatedAt
+
+  business          Business          @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  worker            Worker            @relation(fields: [worker_id], references: [id], onDelete: Cascade)
+  notification_logs NotificationLog[]
+
+  @@map("live_queue")
+}
+
+model PortfolioItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  business_id String   @db.Uuid
+  worker_id   String?  @db.Uuid
+  service_id  String?  @db.Uuid
+  title       String?
+  image_url   String
+  tags        String[] @default([])
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+
+  business Business @relation(fields: [business_id], references: [id], onDelete: Cascade)
+  worker   Worker?  @relation(fields: [worker_id], references: [id], onDelete: SetNull)
+  service  Service? @relation(fields: [service_id], references: [id], onDelete: SetNull)
+
+  @@map("portfolio_items")
+}
+
+model BusinessSetting {
+  id          String    @id @default(uuid()) @db.Uuid
+  business_id String?   @db.Uuid
+  key         String    @unique
+  value       String
+  updated_at  DateTime  @updatedAt
+
+  business Business? @relation(fields: [business_id], references: [id], onDelete: Cascade)
+
+  @@map("business_settings")
+}
+
+model NotificationLog {
+  id              String             @id @default(uuid()) @db.Uuid
+  appointment_id  String?            @db.Uuid
+  queue_id        String?            @db.Uuid
+  recipient_phone String
+  message_type    NotificationType
+  status          NotificationStatus @default(PENDING)
+  payload         String?
+  sent_at         DateTime           @default(now())
+
+  appointment Appointment?   @relation(fields: [appointment_id], references: [id], onDelete: SetNull)
+  queue_item  LiveQueueItem? @relation(fields: [queue_id], references: [id], onDelete: SetNull)
+
+  @@map("notification_logs")
+}

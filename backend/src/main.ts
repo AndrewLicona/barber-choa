@@ -19,18 +19,17 @@ async function bootstrap() {
   // Habilitar validación automática con DTOs
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,
+      whitelist: false,
       transform: true,
-      forbidNonWhitelisted: true,
     }),
   );
 
-  // Habilitar CORS para el frontend Next.js
-  const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',')
-    : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+  // Habilitar CORS para el frontend Next.js y orígenes de Railway / localhost
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      // Permitir solicitudes sin origen (curl, server-side) y cualquier origen en producción/desarrollo
+      callback(null, true);
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });

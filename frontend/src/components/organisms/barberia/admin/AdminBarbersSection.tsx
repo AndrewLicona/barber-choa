@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Edit2, Clock, Trash2, Phone, CheckCircle, Shield } from 'lucide-react';
+import { Plus, Edit2, Clock, Trash2, Phone, CheckCircle, Shield, KeyRound, Copy, CheckCircle2 } from 'lucide-react';
 import { Worker, Schedule } from '@/types/database';
 import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
 import { BarberModal } from './BarberModal';
 import { ScheduleModal } from './ScheduleModal';
 
@@ -28,6 +29,7 @@ interface AdminBarbersSectionProps {
     data: { start_time: string; end_time: string; is_active: boolean },
   ) => Promise<void>;
   onCopyWeekSchedule: (workerId: string) => Promise<void>;
+  onGetCredentials?: (workerId: string) => Promise<{ email: string; password: string }>;
   isAdmin?: boolean;
   onError?: (msg: string) => void;
 }
@@ -40,12 +42,22 @@ export function AdminBarbersSection({
   onDeleteRequest,
   onSaveSchedule,
   onCopyWeekSchedule,
+  onGetCredentials,
   isAdmin = true,
   onError,
 }: AdminBarbersSectionProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null);
   const [scheduleWorker, setScheduleWorker] = useState<Worker | null>(null);
+
+  // Modal para ver / restablecer credenciales
+  const [credentialsModal, setCredentialsModal] = useState<{
+    workerName: string;
+    email: string;
+    password?: string;
+  } | null>(null);
+  const [copiedField, setCopiedField] = useState<'email' | 'password' | null>(null);
+  const [loadingCredsId, setLoadingCredsId] = useState<string | null>(null);
 
   const openNew = () => {
     setEditingWorker(null);
@@ -57,6 +69,25 @@ export function AdminBarbersSection({
     setIsModalOpen(true);
   };
 
+  const handleShowCredentials = async (worker: Worker) => {
+    if (!onGetCredentials) return;
+    setLoadingCredsId(worker.id);
+    try {
+      const creds = await onGetCredentials(worker.id);
+      if (creds) {
+        setCredentialsModal({
+          workerName: worker.name,
+          email: creds.email,
+          password: creds.password,
+        });
+      }
+    } catch (err: any) {
+      onError?.(err?.message || 'Error al obtener credenciales');
+    } finally {
+      setLoadingCredsId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -65,7 +96,7 @@ export function AdminBarbersSection({
             Equipo de Barberos ({workers.length})
           </h3>
           <p className="text-xs text-zinc-400">
-            Administra especialistas, disponibilidad de citas y horarios
+            Administra especialistas, disponibilidad de citas y acceso individual a la fila
           </p>
         </div>
         {isAdmin && (
@@ -94,35 +125,42 @@ export function AdminBarbersSection({
           {workers.map((worker) => (
             <div
               key={worker.id}
-              className="p-5 rounded-2xl bg-[#121216] border border-white/[0.08] flex flex-col justify-between gap-4"
+              className={`p-5 rounded-2xl border transition-all ${
+                worker.is_active
+                  ? 'bg-[#121216] border-white/10 hover:border-[#d4af37]/40'
+                  : 'bg-[#121216]/50 border-white/5 opacity-60'
+              }`}
             >
-              <div className="flex items-start gap-4">
-                <div className="relative w-14 h-14 rounded-2xl overflow-hidden bg-black/60 border border-white/10 flex-shrink-0">
-                  <img
-                    src={worker.avatar_url || '/logo_barberchoa.jpg'}
-                    alt={worker.name}
-                    className="w-full h-full object-cover"
-                  />
+              <div className="flex items-start gap-4 mb-4">
+                <div className="relative">
+                  <div className="w-14 h-14 rounded-2xl overflow-hidden ring-1 ring-white/10 bg-black shrink-0">
+                    <img
+                      src={worker.avatar_url || '/logo_barberchoa.jpg'}
+                      alt={worker.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  {worker.is_active && (
+                    <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-[#121216] rounded-full" />
+                  )}
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-luxury text-base font-bold text-white truncate">
-                      {worker.name}
-                    </h4>
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-sm font-bold text-white truncate">{worker.name}</h4>
                     <span
-                      className={`text-[9px] font-mono px-2 py-0.5 rounded-full border ${
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold ${
                         worker.is_active
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                          : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'bg-zinc-800 text-zinc-400'
                       }`}
                     >
                       {worker.is_active ? 'Activo' : 'Inactivo'}
                     </span>
                   </div>
 
-                  <p className="text-xs text-zinc-400 font-mono mt-0.5 flex items-center gap-1">
-                    <Phone className="w-3 h-3 text-emerald-400" />
+                  <p className="text-xs text-zinc-400 font-mono mt-1 flex items-center gap-1.5">
+                    <Phone className="w-3 h-3 text-[#d4af37]" />
                     <span>{worker.phone || 'Sin teléfono'}</span>
                   </p>
 
@@ -132,10 +170,15 @@ export function AdminBarbersSection({
                     </p>
                   )}
 
-                  <div className="mt-2 flex items-center gap-1.5">
+                  <div className="mt-2 flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.04] text-zinc-300 border border-white/5">
                       {worker.accepts_appointments ? '📅 Acepta Citas' : '💈 Solo Turnos en Fila'}
                     </span>
+                    {(worker as any).user?.email && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#d4af37]/10 text-[#f3e5ab] border border-[#d4af37]/20 truncate max-w-[200px]">
+                        {(worker as any).user.email}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -154,6 +197,16 @@ export function AdminBarbersSection({
                 </button>
 
                 <div className="flex items-center gap-1.5">
+                  {isAdmin && onGetCredentials && (
+                    <button
+                      onClick={() => handleShowCredentials(worker)}
+                      disabled={loadingCredsId === worker.id}
+                      className="p-2 text-zinc-400 hover:text-[#d4af37] rounded-lg hover:bg-white/5 border border-white/5 transition-colors disabled:opacity-50"
+                      title="Ver / Restablecer Credenciales de Acceso"
+                    >
+                      <KeyRound className={`w-4 h-4 ${loadingCredsId === worker.id ? 'animate-spin' : 'text-[#d4af37]'}`} />
+                    </button>
+                  )}
                   <button
                     onClick={() => setScheduleWorker(worker)}
                     className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 border border-white/5 transition-colors"
@@ -192,6 +245,92 @@ export function AdminBarbersSection({
         onSave={onSaveBarber}
         onError={onError}
       />
+
+      {/* Modal de Credenciales */}
+      {credentialsModal && (
+        <Modal
+          isOpen={!!credentialsModal}
+          onClose={() => setCredentialsModal(null)}
+          title={`Credenciales: ${credentialsModal.workerName}`}
+          subtitle="Datos de acceso para administrar la fila de turnos"
+          maxWidth="md"
+        >
+          <div className="space-y-4">
+            <div className="p-3.5 rounded-xl bg-[#d4af37]/10 border border-[#d4af37]/30 flex items-start gap-3">
+              <KeyRound className="w-5 h-5 text-[#d4af37] mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs font-bold text-[#f3e5ab] mb-0.5">Acceso al Panel de Barberos</p>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  El barbero puede ingresar con estos datos en{' '}
+                  <span className="text-[#d4af37] font-mono">/barberia/login</span> para gestionar su propia fila de clientes.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/10">
+                <label className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 block mb-1">
+                  Correo electrónico
+                </label>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-mono text-white break-all">
+                    {credentialsModal.email}
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(credentialsModal.email);
+                      setCopiedField('email');
+                      setTimeout(() => setCopiedField(null), 2000);
+                    }}
+                    className="shrink-0 p-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                    title="Copiar correo"
+                  >
+                    {copiedField === 'email' ? (
+                      <CheckCircle2 className="w-4 h-4 text-green-400" />
+                    ) : (
+                      <Copy className="w-4 h-4 text-zinc-400" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {credentialsModal.password && (
+                <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/10">
+                  <label className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 block mb-1">
+                    Contraseña
+                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-mono text-white tracking-widest">
+                      {credentialsModal.password}
+                    </span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(credentialsModal.password!);
+                        setCopiedField('password');
+                        setTimeout(() => setCopiedField(null), 2000);
+                      }}
+                      className="shrink-0 p-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                      title="Copiar contraseña"
+                    >
+                      {copiedField === 'password' ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-400" />
+                      ) : (
+                        <Copy className="w-4 h-4 text-zinc-400" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 flex justify-end border-t border-white/10">
+              <Button variant="gold" size="sm" onClick={() => setCredentialsModal(null)}>
+                Entendido, cerrar
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Modal horarios */}
       <ScheduleModal

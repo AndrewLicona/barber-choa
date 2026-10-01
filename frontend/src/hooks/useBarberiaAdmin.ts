@@ -310,6 +310,25 @@ export function useBarberiaAdmin() {
     }
   };
 
+  const getOrResetBarberCredentials = async (workerId: string) => {
+    try {
+      const res = await nestJSFetch(`/workers/${workerId}/credentials`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.message || 'Error al obtener credenciales');
+      }
+      const data = await res.json();
+      await loadData();
+      showToast('Credenciales generadas correctamente');
+      return data.credentials as { email: string; password: string };
+    } catch (err: any) {
+      showToast(err?.message || 'Error al obtener credenciales', 'error');
+      throw err;
+    }
+  };
+
   // 5. Service handlers
   const saveService = async (
     editingService: Service | null,
@@ -568,6 +587,7 @@ export function useBarberiaAdmin() {
     saveBarber,
     toggleBarberActive,
     deleteBarber,
+    getOrResetBarberCredentials,
     saveService,
     toggleServiceActive,
     deleteService,

@@ -39,6 +39,7 @@ export default function BarberiaAdminPage() {
     saveBarber,
     toggleBarberActive,
     deleteBarber,
+    getOrResetBarberCredentials,
     saveService,
     toggleServiceActive,
     deleteService,
@@ -242,6 +243,7 @@ export default function BarberiaAdminPage() {
                 isAdmin={isAdmin}
                 onSaveBarber={saveBarber}
                 onToggleActive={toggleBarberActive}
+                onGetCredentials={getOrResetBarberCredentials}
                 onDeleteRequest={(w: Worker) =>
                   setDeleteTarget({ type: 'worker', id: w.id, name: w.name })
                 }

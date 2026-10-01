@@ -162,4 +162,78 @@ export class WorkersService {
       where: { id },
     });
   }
+
+  async resetCredentials(id: string) {
+    const worker = await this.prisma.worker.findUnique({
+      where: { id },
+      include: { user: true, business: true },
+    });
+
+    if (!worker) {
+      throw new NotFoundException(`Barbero no encontrado`);
+    }
+
+    const slugName = worker.name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '');
+    const randomDigits = Math.floor(100 + Math.random() * 900);
+    const barberEmail = worker.user?.email || `${slugName || 'barbero'}${randomDigits}@barberchoa.com`;
+    const newPassword = `Choa${Math.floor(1000 + Math.random() * 9000)}!`;
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(newPassword, salt);
+
+    let user = worker.user;
+    if (user) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { password_hash: passwordHash, is_active: true },
+      });
+    } else {
+      user = await this.prisma.user.create({
+        data: {
+          email: barberEmail,
+          password_hash: passwordHash,
+          role: 'WORKER_WALKIN',
+          is_active: true,
+        },
+      });
+      await this.prisma.worker.update({
+        where: { id: worker.id },
+        data: { user_id: user.id },
+      });
+    }
+
+    try {
+      await this.prisma.userBusinessAccess.upsert({
+        where: {
+          auth_user_id_business_id: {
+            auth_user_id: user.id,
+            business_id: worker.business_id,
+          },
+        },
+        update: { role: 'WORKER', is_active: true },
+        create: {
+          user_id: user.id,
+          auth_user_id: user.id,
+          business_id: worker.business_id,
+          role: 'WORKER',
+          is_active: true,
+        },
+      });
+    } catch (e) {
+      console.warn('Could not upsert userBusinessAccess in resetCredentials:', e);
+    }
+
+    return {
+      workerId: worker.id,
+      workerName: worker.name,
+      credentials: {
+        email: user.email,
+        password: newPassword,
+      },
+    };
+  }
 }

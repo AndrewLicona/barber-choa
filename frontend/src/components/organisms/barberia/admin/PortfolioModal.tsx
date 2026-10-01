@@ -29,7 +29,8 @@ export function PortfolioModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!imageUrl.trim()) {
+    const cleanUrl = imageUrl.trim().replace(/^['"\s]+|['",;\s]+$/g, '');
+    if (!cleanUrl) {
       onError?.('Sube o ingresa la URL de la imagen');
       return;
     }
@@ -43,7 +44,7 @@ export function PortfolioModal({
     try {
       await onSave({
         title: title.trim() || 'Trabajo Barber Choa',
-        image_url: imageUrl.trim(),
+        image_url: cleanUrl,
         tags,
       });
       setTitle('');

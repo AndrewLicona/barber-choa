@@ -141,7 +141,31 @@ export function ImageUploader({
               <input
                 type="url"
                 value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setUrlInput(raw);
+                  const clean = raw.trim().replace(/^['"\s]+|['",;\s]+$/g, '');
+                  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+                    onChange(clean);
+                  }
+                }}
+                onBlur={() => {
+                  if (urlInput.trim()) {
+                    const clean = urlInput.trim().replace(/^['"\s]+|['",;\s]+$/g, '');
+                    onChange(clean);
+                    setUrlInput('');
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (urlInput.trim()) {
+                      const clean = urlInput.trim().replace(/^['"\s]+|['",;\s]+$/g, '');
+                      onChange(clean);
+                      setUrlInput('');
+                    }
+                  }
+                }}
                 placeholder="https://images.unsplash.com/..."
                 className="flex-1 px-3 py-2 text-xs rounded-xl bg-zinc-900 border border-white/10 text-white placeholder-zinc-500 focus:outline-none focus:border-[#d4af37]/60"
               />
@@ -149,11 +173,12 @@ export function ImageUploader({
                 type="button"
                 onClick={() => {
                   if (urlInput.trim()) {
-                    onChange(urlInput.trim());
+                    const clean = urlInput.trim().replace(/^['"\s]+|['",;\s]+$/g, '');
+                    onChange(clean);
                     setUrlInput('');
                   }
                 }}
-                className="px-3 py-2 text-xs font-bold rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white border border-white/10"
+                className="px-3 py-2 text-xs font-bold rounded-xl bg-[#d4af37]/20 hover:bg-[#d4af37]/30 text-[#f3e5ab] border border-[#d4af37]/40 cursor-pointer"
               >
                 Aplicar
               </button>

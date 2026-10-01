@@ -5,16 +5,18 @@ import { useState, useEffect } from 'react';
 import { Service, Worker } from '@/types/database';
 import { getSupabase } from '@/lib/supabase/client';
 import { formatCurrency } from '@/lib/whatsapp';
-import { X, CheckCircle2, ChevronRight, Calendar, Clock } from 'lucide-react';
+import { X, CheckCircle2, ChevronRight, Calendar, Clock, Scissors } from 'lucide-react';
 
 interface Props {
   service: Service | null;
+  services?: Service[];
   isOpen: boolean;
   onClose: () => void;
   defaultWorkerId?: string;
 }
 
-export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Props) {
+export function BookingModal({ service, services = [], isOpen, onClose, defaultWorkerId }: Props) {
+  const [currentService, setCurrentService] = useState<Service | null>(service || (services.length > 0 ? services[0] : null));
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>(defaultWorkerId || '');
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
@@ -23,33 +25,52 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
   const [clientPhone, setClientPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [bookedInfo, setBookedInfo] = useState<{ workerName: string; date: string; time: string; service: string } | null>(null);
+  const [bookedInfo, setBookedInfo] = useState<{ workerName: string; date: string; time: string; service: string; phone: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [availableTimes, setAvailableTimes] = useState<string[]>([]);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
 
-  // Cargar workers reales desde la API pública
+  // Sincronizar servicio cuando cambian los props
   useEffect(() => {
-    if (!isOpen || !service) return;
+    if (service) {
+      setCurrentService(service);
+    } else if (services.length > 0 && !currentService) {
+      setCurrentService(services[0]);
+    }
+  }, [service, services]);
+
+  // Sincronizar barbero por defecto
+  useEffect(() => {
+    if (defaultWorkerId) {
+      setSelectedWorkerId(defaultWorkerId);
+    }
+  }, [defaultWorkerId, isOpen]);
+
+  // Cargar workers reales desde la API pública o Supabase
+  useEffect(() => {
+    if (!isOpen) return;
+    const bType = currentService?.business_type || 'barberia';
     const sb = getSupabase();
     sb.from('workers')
       .select('*')
-      .eq('business_type', service.business_type)
+      .eq('business_type', bType)
       .eq('accepts_appointments', true)
       .eq('is_active', true)
       .order('created_at')
       .then(({ data }) => {
         if (data && data.length > 0) {
           setWorkers(data as Worker[]);
-          setSelectedWorkerId(defaultWorkerId || data[0].id);
+          if (!selectedWorkerId || !data.some((w) => w.id === selectedWorkerId)) {
+            setSelectedWorkerId(defaultWorkerId || data[0].id);
+          }
         }
       });
-  }, [isOpen, service]);
+  }, [isOpen, currentService?.business_type, defaultWorkerId]);
 
   // Cargar disponibilidad real desde el backend (excluye horas ya tomadas)
   useEffect(() => {
-    if (!isOpen || !service || !selectedWorkerId) return;
+    if (!isOpen || !currentService || !selectedWorkerId) return;
     const selectedDate = new Date();
     selectedDate.setDate(selectedDate.getDate() + selectedDateIndex);
     const date = [
@@ -63,7 +84,7 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
     setSelectedTime('');
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
     fetch(
-      `${apiUrl}/appointments/availability?businessSlug=${service.business_type}&serviceId=${service.id}&workerId=${selectedWorkerId}&date=${date}`,
+      `${apiUrl}/appointments/availability?businessSlug=${currentService.business_type}&serviceId=${currentService.id}&workerId=${selectedWorkerId}&date=${date}`,
       { signal: controller.signal }
     )
       .then(async (response) => {
@@ -79,11 +100,14 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
       })
       .finally(() => setLoadingAvailability(false));
     return () => controller.abort();
-  }, [isOpen, service, selectedWorkerId, selectedDateIndex]);
+  }, [isOpen, currentService, selectedWorkerId, selectedDateIndex]);
 
-  if (!isOpen || !service) return null;
+  if (!isOpen) return null;
 
-  const isBarber = service.business_type === 'barberia';
+  const activeService = currentService || service || services[0];
+  if (!activeService) return null;
+
+  const isBarber = activeService.business_type === 'barberia';
   const availableDates = Array.from({ length: 7 }).map((_, i) => {
     const d = new Date();
     d.setDate(d.getDate() + i);
@@ -110,8 +134,8 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        businessSlug: service.business_type,
-        serviceId: service.id,
+        businessSlug: activeService.business_type,
+        serviceId: activeService.id,
         workerId: selectedWorker.id,
         date,
         startTime: selectedTime,
@@ -123,7 +147,6 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
     const payload = await response.json();
     if (!response.ok) {
       setBookingError(payload.message || 'No fue posible registrar la cita. Intenta con otro horario.');
-      // Refrescar disponibilidad para que el slot tomado desaparezca
       setAvailableTimes((prev) => prev.filter((t) => t !== selectedTime));
       setSelectedTime('');
       setIsSubmitting(false);
@@ -135,7 +158,7 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
       workerName: selectedWorker.name,
       date: dateLabel,
       time: selectedTime,
-      service: service.title,
+      service: activeService.title,
       phone: formattedPhone,
     });
     setIsSubmitted(true);
@@ -153,9 +176,9 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
       <div
-        className={`relative w-full max-w-lg my-8 rounded-3xl p-6 sm:p-7 shadow-2xl border ${
+        className={`relative w-full min-h-screen sm:min-h-0 sm:h-auto sm:max-w-lg sm:my-8 rounded-none sm:rounded-3xl p-5 sm:p-7 shadow-2xl border flex flex-col justify-between overflow-y-auto pb-16 sm:pb-7 ${
           isBarber
             ? 'bg-[#0f1523] border-[#d4af37]/30 text-white'
             : 'bg-white border-rose-200 text-stone-800'
@@ -163,9 +186,9 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
       >
         <button
           onClick={handleReset}
-          className={`absolute top-5 right-5 p-2 rounded-full transition-colors ${
+          className={`absolute top-4 right-4 sm:top-5 sm:right-5 p-2 rounded-full transition-colors z-10 ${
             isBarber
-              ? 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white'
+              ? 'bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white'
               : 'bg-stone-100 hover:bg-stone-200 text-stone-500'
           }`}
         >
@@ -174,17 +197,18 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
 
         {!isSubmitted ? (
           <div>
-            <div className="flex items-start gap-3.5 pr-8 mb-6">
-              {service.image_url && (
+            {/* Header del servicio seleccionado */}
+            <div className="flex items-start gap-3.5 pr-8 mb-5">
+              {activeService.image_url && (
                 <img
-                  src={service.image_url}
-                  alt={service.title}
-                  className="w-16 h-16 rounded-2xl object-cover ring-1 ring-[#d4af37]/30 flex-shrink-0"
+                  src={activeService.image_url}
+                  alt={activeService.title}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover ring-1 ring-[#d4af37]/30 flex-shrink-0"
                 />
               )}
-              <div>
+              <div className="flex-1">
                 <span
-                  className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full mb-1.5 ${
+                  className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full mb-1 ${
                     isBarber
                       ? 'bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20'
                       : 'bg-rose-50 text-rose-600 border border-rose-200'
@@ -192,27 +216,54 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
                 >
                   {isBarber ? '💈 Reservar Cita - Barbería' : '💅 Reservar Cita - Manicura'}
                 </span>
-                <h3 className="text-lg sm:text-xl font-extrabold tracking-tight">{service.title}</h3>
-                <p className={`text-xs mt-0.5 ${isBarber ? 'text-zinc-400' : 'text-stone-500'}`}>
-                  ⏱️ {service.duration_minutes} min • 💵 {formatCurrency(service.price)}
+                <h3 className="text-base sm:text-xl font-extrabold tracking-tight leading-snug">{activeService.title}</h3>
+                <p className={`text-xs mt-0.5 font-mono ${isBarber ? 'text-[#f3e5ab]' : 'text-rose-600'}`}>
+                  ⏱️ {activeService.duration_minutes} min • 💵 {formatCurrency(activeService.price)}
                 </p>
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Selector de Servicio si hay más de uno disponible */}
+            {services && services.length > 1 && (
+              <div className="mb-5 p-3 rounded-2xl bg-black/30 border border-white/10">
+                <label className={`block text-[11px] font-bold uppercase tracking-wider mb-1.5 ${isBarber ? 'text-zinc-300' : 'text-stone-700'}`}>
+                  Cambiar Servicio
+                </label>
+                <select
+                  value={activeService.id}
+                  onChange={(e) => {
+                    const found = services.find((s) => s.id === e.target.value);
+                    if (found) setCurrentService(found);
+                  }}
+                  className={`w-full px-3 py-2 rounded-xl border text-xs font-semibold focus:outline-none transition-colors ${
+                    isBarber
+                      ? 'bg-[#141b2e] border-[#d4af37]/40 text-[#f3e5ab] focus:border-[#d4af37]'
+                      : 'bg-stone-50 border-stone-200 text-stone-900 focus:border-rose-400'
+                  }`}
+                >
+                  {services.map((s) => (
+                    <option key={s.id} value={s.id} className="bg-zinc-900 text-white">
+                      {s.title} — {formatCurrency(s.price)} ({s.duration_minutes} min)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
               {/* Selector de Profesional */}
               {workers.length > 0 && (
                 <div>
                   <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${isBarber ? 'text-zinc-300' : 'text-stone-700'}`}>
                     1. Selecciona el Profesional
                   </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {workers.map((w) => (
                       <button
                         type="button"
                         key={w.id}
                         onClick={() => setSelectedWorkerId(w.id)}
-                        className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${
+                        className={`flex items-center gap-3 p-2.5 sm:p-3 rounded-2xl border text-left transition-all ${
                           selectedWorkerId === w.id
                             ? isBarber
                               ? 'bg-[#d4af37]/15 border-[#d4af37] text-white shadow-md'
@@ -226,7 +277,7 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
                         <div>
                           <p className="text-xs font-bold">{w.name}</p>
                           <p className={`text-[10px] ${isBarber ? 'text-zinc-400' : 'text-stone-500'}`}>
-                            {w.business_type === 'barberia' ? 'Barbero' : 'Nail Artist'}
+                            {w.bio || (w.business_type === 'barberia' ? 'Barbero Profesional' : 'Nail Artist')}
                           </p>
                         </div>
                       </button>
@@ -240,7 +291,7 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
                 <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${isBarber ? 'text-zinc-300' : 'text-stone-700'}`}>
                   2. Elige el Día
                 </label>
-                <div className="flex gap-2 overflow-x-auto pb-2">
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
                   {availableDates.map((date, idx) => (
                     <button
                       type="button"
@@ -264,7 +315,7 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
                 </div>
               </div>
 
-              {/* Selector Hora — solo horas disponibles (no tomadas) */}
+              {/* Selector Hora */}
               <div>
                 <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${isBarber ? 'text-zinc-300' : 'text-stone-700'}`}>
                   3. Elige la Hora
@@ -276,7 +327,7 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
                     No hay horarios disponibles para esta fecha. Prueba otro día o profesional.
                   </p>
                 ) : (
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                     {availableTimes.map((time) => (
                       <button
                         type="button"
@@ -367,7 +418,7 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
             </form>
           </div>
         ) : (
-          /* Pantalla de confirmación EN PLATAFORMA — sin WhatsApp */
+          /* Pantalla de confirmación EN PLATAFORMA */
           <div className="text-center py-6">
             <div
               className={`w-16 h-16 rounded-full mx-auto flex items-center justify-center mb-4 ${

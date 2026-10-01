@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Edit2, Clock, Trash2, Phone, CheckCircle, Shield, KeyRound, Copy, CheckCircle2 } from 'lucide-react';
+import { Plus, Edit2, Clock, Trash2, Phone, KeyRound, Copy, CheckCircle2, Shield } from 'lucide-react';
 import { Worker, Schedule } from '@/types/database';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -55,6 +55,7 @@ export function AdminBarbersSection({
     workerName: string;
     email: string;
     password?: string;
+    isNew?: boolean;
   } | null>(null);
   const [copiedField, setCopiedField] = useState<'email' | 'password' | null>(null);
   const [loadingCredsId, setLoadingCredsId] = useState<string | null>(null);
@@ -69,6 +70,30 @@ export function AdminBarbersSection({
     setIsModalOpen(true);
   };
 
+  const handleSaveBarberWrapper = async (
+    worker: Worker | null,
+    data: {
+      name: string;
+      phone: string;
+      bio?: string;
+      avatar_url?: string;
+      accepts_appointments: boolean;
+    },
+  ) => {
+    const result = await onSaveBarber(worker, data);
+    setIsModalOpen(false);
+
+    // Si es un barbero nuevo y se generaron credenciales, abrir el modal de credenciales inmediatamente
+    if (!worker && result && (result as any).credentials) {
+      setCredentialsModal({
+        workerName: data.name,
+        email: (result as any).credentials.email,
+        password: (result as any).credentials.password,
+        isNew: true,
+      });
+    }
+  };
+
   const handleShowCredentials = async (worker: Worker) => {
     if (!onGetCredentials) return;
     setLoadingCredsId(worker.id);
@@ -79,6 +104,7 @@ export function AdminBarbersSection({
           workerName: worker.name,
           email: creds.email,
           password: creds.password,
+          isNew: false,
         });
       }
     } catch (err: any) {
@@ -96,7 +122,7 @@ export function AdminBarbersSection({
             Equipo de Barberos ({workers.length})
           </h3>
           <p className="text-xs text-zinc-400">
-            Administra especialistas, disponibilidad de citas y acceso individual a la fila
+            Administra especialistas, disponibilidad de citas y credenciales de acceso para su fila
           </p>
         </div>
         {isAdmin && (
@@ -170,20 +196,28 @@ export function AdminBarbersSection({
                     </p>
                   )}
 
-                  <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                  <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.04] text-zinc-300 border border-white/5">
                       {worker.accepts_appointments ? '📅 Acepta Citas' : '💈 Solo Turnos en Fila'}
                     </span>
-                    {(worker as any).user?.email && (
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#d4af37]/10 text-[#f3e5ab] border border-[#d4af37]/20 truncate max-w-[200px]">
-                        {(worker as any).user.email}
-                      </span>
+
+                    {/* Botón de acceso a credenciales en la tarjeta */}
+                    {isAdmin && onGetCredentials && (
+                      <button
+                        type="button"
+                        onClick={() => handleShowCredentials(worker)}
+                        disabled={loadingCredsId === worker.id}
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-[#d4af37]/15 hover:bg-[#d4af37]/25 text-[#f3e5ab] text-[10px] font-mono border border-[#d4af37]/30 transition-colors"
+                      >
+                        <KeyRound className={`w-3 h-3 text-[#d4af37] ${loadingCredsId === worker.id ? 'animate-spin' : ''}`} />
+                        <span>{loadingCredsId === worker.id ? 'Cargando...' : 'Ver / Restablecer Clave'}</span>
+                      </button>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Botones de acción */}
+              {/* Botones de acción inferior */}
               <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between gap-2">
                 <button
                   onClick={() => onToggleActive(worker)}
@@ -197,16 +231,6 @@ export function AdminBarbersSection({
                 </button>
 
                 <div className="flex items-center gap-1.5">
-                  {isAdmin && onGetCredentials && (
-                    <button
-                      onClick={() => handleShowCredentials(worker)}
-                      disabled={loadingCredsId === worker.id}
-                      className="p-2 text-zinc-400 hover:text-[#d4af37] rounded-lg hover:bg-white/5 border border-white/5 transition-colors disabled:opacity-50"
-                      title="Ver / Restablecer Credenciales de Acceso"
-                    >
-                      <KeyRound className={`w-4 h-4 ${loadingCredsId === worker.id ? 'animate-spin' : 'text-[#d4af37]'}`} />
-                    </button>
-                  )}
                   <button
                     onClick={() => setScheduleWorker(worker)}
                     className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 border border-white/5 transition-colors"
@@ -242,24 +266,28 @@ export function AdminBarbersSection({
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         worker={editingWorker}
-        onSave={onSaveBarber}
+        onSave={handleSaveBarberWrapper}
         onError={onError}
       />
 
-      {/* Modal de Credenciales */}
+      {/* Modal de Credenciales (Visible tras crear o al pulsar "Ver / Restablecer Clave") */}
       {credentialsModal && (
         <Modal
           isOpen={!!credentialsModal}
           onClose={() => setCredentialsModal(null)}
-          title={`Credenciales: ${credentialsModal.workerName}`}
-          subtitle="Datos de acceso para administrar la fila de turnos"
+          title={credentialsModal.isNew ? '¡Barbero Creado Exitosamente! ✅' : `Credenciales: ${credentialsModal.workerName}`}
+          subtitle={
+            credentialsModal.isNew
+              ? 'Guarda estas credenciales para que el barbero pueda acceder'
+              : 'Datos de acceso para administrar la fila de turnos'
+          }
           maxWidth="md"
         >
           <div className="space-y-4">
             <div className="p-3.5 rounded-xl bg-[#d4af37]/10 border border-[#d4af37]/30 flex items-start gap-3">
               <KeyRound className="w-5 h-5 text-[#d4af37] mt-0.5 shrink-0" />
               <div>
-                <p className="text-xs font-bold text-[#f3e5ab] mb-0.5">Acceso al Panel de Barberos</p>
+                <p className="text-xs font-bold text-[#f3e5ab] mb-0.5">Acceso del Barbero a su Fila</p>
                 <p className="text-[11px] text-zinc-400 leading-relaxed">
                   El barbero puede ingresar con estos datos en{' '}
                   <span className="text-[#d4af37] font-mono">/barberia/login</span> para gestionar su propia fila de clientes.
@@ -270,13 +298,14 @@ export function AdminBarbersSection({
             <div className="space-y-3">
               <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/10">
                 <label className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 block mb-1">
-                  Correo electrónico
+                  Correo electrónico de acceso
                 </label>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-mono text-white break-all">
                     {credentialsModal.email}
                   </span>
                   <button
+                    type="button"
                     onClick={() => {
                       navigator.clipboard.writeText(credentialsModal.email);
                       setCopiedField('email');
@@ -304,6 +333,7 @@ export function AdminBarbersSection({
                       {credentialsModal.password}
                     </span>
                     <button
+                      type="button"
                       onClick={() => {
                         navigator.clipboard.writeText(credentialsModal.password!);
                         setCopiedField('password');

@@ -52,7 +52,7 @@ export function BarberModal({
       setAcceptsAppts(worker.accepts_appointments);
     } else {
       setName('');
-      setPhone('');
+      setPhone('+57 ');
       setBio('');
       setAvatarUrl('');
       setAcceptsAppts(true);

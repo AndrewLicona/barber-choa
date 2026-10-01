@@ -26,10 +26,14 @@ export default function BarberiaPage() {
   } = useBarberiaData();
 
   const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [selectedBarber, setSelectedBarber] = useState<Worker | null>(null);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
 
-  const handleOpenBooking = (service?: Service) => {
+  const handleOpenBooking = (service?: Service, barber?: Worker) => {
     setSelectedService(service || services[0] || null);
+    if (barber) {
+      setSelectedBarber(barber);
+    }
     setIsBookingOpen(true);
   };
 
@@ -126,14 +130,14 @@ export default function BarberiaPage() {
                           />
                           <div>
                             <h4 className="text-xs font-bold text-white">{b.name}</h4>
-                            <p className="text-[11px] text-zinc-400 font-mono">
-                              {b.phone || 'Sin teléfono'}
+                            <p className="text-[11px] text-zinc-400 font-mono line-clamp-1">
+                              {b.bio || 'Especialista en cortes & barba'}
                             </p>
                           </div>
                         </div>
                         <button
-                          onClick={() => handleOpenBooking()}
-                          className="px-3 py-1.5 rounded-lg gold-button text-[11px] font-bold uppercase tracking-wider"
+                          onClick={() => handleOpenBooking(undefined, b)}
+                          className="px-3 py-1.5 rounded-lg gold-button text-[11px] font-bold uppercase tracking-wider shrink-0"
                         >
                           Agendar
                         </button>
@@ -168,7 +172,7 @@ export default function BarberiaPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-4">
                     {services.map((s) => (
                       <ServiceCard
                         key={s.id}
@@ -210,9 +214,13 @@ export default function BarberiaPage() {
       {/* Modal de Agendamiento */}
       <BookingModal
         service={selectedService}
+        services={services}
         isOpen={isBookingOpen}
-        onClose={() => setIsBookingOpen(false)}
-        defaultWorkerId={collabBarbers[0]?.id}
+        onClose={() => {
+          setIsBookingOpen(false);
+          setSelectedBarber(null);
+        }}
+        defaultWorkerId={selectedBarber?.id || collabBarbers[0]?.id}
       />
     </div>
   );

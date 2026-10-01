@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import { Upload, Image as ImageIcon, X, Loader2 } from 'lucide-react';
 import { uploadMedia } from '@/lib/media-upload';
-import { getNestJSToken } from '@/lib/auth-context';
 
 interface ImageUploaderProps {
   label?: string;
@@ -40,12 +39,7 @@ export function ImageUploader({
 
     setIsUploading(true);
     try {
-      const token = getNestJSToken();
-      if (!token) {
-        onError?.('Sesión expirada o no autenticada');
-        return;
-      }
-      const publicUrl = await uploadMedia(folder, file, token);
+      const publicUrl = await uploadMedia(folder, file);
       onChange(publicUrl);
       onSuccess?.('Imagen subida correctamente');
     } catch (err: any) {

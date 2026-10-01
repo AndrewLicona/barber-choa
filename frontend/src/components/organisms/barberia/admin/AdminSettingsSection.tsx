@@ -30,15 +30,17 @@ export function AdminSettingsSection({
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
+    const rawPhone = settings['whatsapp_number'] || business?.phone || '';
+    const phoneVal = rawPhone.trim() ? rawPhone : '+57 ';
     setFormData({
       business_name: settings['business_name'] || business?.name || 'Barber Choa',
-      whatsapp_number: settings['whatsapp_number'] || business?.phone || '',
       address: settings['address'] || business?.address || '',
       opening_hours_text: settings['opening_hours_text'] || 'Lunes a Sábado: 9:00 AM - 8:00 PM',
       instagram_url: settings['instagram_url'] || business?.instagram_url || '',
       description: settings['description'] || business?.description || '',
       booking_message: settings['booking_message'] || business?.booking_message || '',
       ...settings,
+      whatsapp_number: phoneVal,
     });
   }, [settings, business]);
 

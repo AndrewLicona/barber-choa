@@ -220,7 +220,7 @@ export default function ManicuraAdminPage() {
     } else {
       setEditingWorker(null);
       setWorkerFormName('');
-      setWorkerFormPhone('');
+      setWorkerFormPhone('+57 ');
       setWorkerFormBio('');
       setWorkerFormAvatarUrl('');
       setWorkerFormAcceptsAppts(true);
@@ -234,13 +234,7 @@ export default function ManicuraAdminPage() {
 
     setUploadingAvatar(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        showToast('Sesión expirada', 'error');
-        return;
-      }
-
-      const publicUrl = await uploadMedia('avatars', file, session.access_token);
+      const publicUrl = await uploadMedia('avatars', file);
       setWorkerFormAvatarUrl(publicUrl);
       showToast('Foto subida correctamente');
     } catch (err: any) {
@@ -997,9 +991,9 @@ export default function ManicuraAdminPage() {
                   </label>
                   <input
                     type="text"
-                    value={editSettings['whatsapp_number'] || ''}
+                    value={editSettings['whatsapp_number'] !== undefined ? editSettings['whatsapp_number'] : '+57 '}
                     onChange={(e) => setEditSettings({ ...editSettings, whatsapp_number: e.target.value })}
-                    placeholder="573001234567"
+                    placeholder="+57 300 123 4567"
                     className="w-full px-3.5 py-2 bg-black/50 border border-pink-500/20 rounded-xl text-white text-xs focus:border-pink-500 focus:outline-none"
                   />
                 </div>

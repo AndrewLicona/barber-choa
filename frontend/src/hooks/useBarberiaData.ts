@@ -31,6 +31,7 @@ export function useBarberiaData() {
           .from('services')
           .select('*')
           .eq('business_type', 'barberia')
+          .eq('business_id', 'f880f993-a1a6-4e43-aa44-cc7df98fbd57')
           .eq('is_active', true)
           .order('created_at'),
         sb

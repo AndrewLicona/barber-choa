@@ -1,11 +1,13 @@
 // Auth context para guardar el JWT de NestJS junto con la sesión de Supabase
 import { getSupabase } from './supabase/client';
 
-const API_URL =
+const isLocal =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
-  (typeof window !== 'undefined' && window.location.hostname.includes('railway.app')
-    ? 'https://barber-choa-production.up.railway.app/api'
-    : 'http://localhost:4000/api');
+  (isLocal ? 'http://localhost:4000/api' : 'https://barber-choa-production.up.railway.app/api');
 const NESTJS_TOKEN_KEY = 'barber_choa_nestjs_token';
 const NESTJS_USER_KEY = 'barber_choa_nestjs_user';
 

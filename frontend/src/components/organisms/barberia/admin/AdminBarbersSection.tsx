@@ -83,15 +83,16 @@ export function AdminBarbersSection({
     const result = await onSaveBarber(worker, data);
     setIsModalOpen(false);
 
-    // Si es un barbero nuevo y se generaron credenciales, abrir el modal de credenciales inmediatamente
-    if (!worker && result && (result as any).credentials) {
+    const creds = (result as any)?.credentials;
+    if (!worker && creds && creds.email) {
       setCredentialsModal({
         workerName: data.name,
-        email: (result as any).credentials.email,
-        password: (result as any).credentials.password,
+        email: creds.email,
+        password: creds.password,
         isNew: true,
       });
     }
+    return result;
   };
 
   const handleShowCredentials = async (worker: Worker) => {
@@ -99,13 +100,15 @@ export function AdminBarbersSection({
     setLoadingCredsId(worker.id);
     try {
       const creds = await onGetCredentials(worker.id);
-      if (creds) {
+      if (creds && creds.email) {
         setCredentialsModal({
           workerName: worker.name,
           email: creds.email,
           password: creds.password,
           isNew: false,
         });
+      } else {
+        onError?.('No se pudieron obtener las credenciales');
       }
     } catch (err: any) {
       onError?.(err?.message || 'Error al obtener credenciales');

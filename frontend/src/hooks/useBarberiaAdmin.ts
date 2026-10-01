@@ -49,8 +49,8 @@ export function useBarberiaAdmin() {
         setUserEmail(user.email || 'Administrador Barbería');
         const role = (user.role || '').toUpperCase();
         setUserRole(role);
-        // Barbers have role 'WORKER' or 'WORKER_WALKIN'
-        const isWorkerOnly = role.includes('WORKER');
+        // Barbers have role 'WORKER' or 'WORKER_WALKIN' unless they are ADMIN or SUPERADMIN
+        const isWorkerOnly = role.includes('WORKER') && !role.includes('ADMIN') && !role.includes('SUPER');
         setIsAdmin(!isWorkerOnly);
       }
       setSessionLoading(false);
@@ -60,9 +60,9 @@ export function useBarberiaAdmin() {
   }, [router]);
 
   // 2. Load admin data
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isInitial = false) => {
     if (!supabase) return;
-    setLoading(true);
+    if (isInitial) setLoading(true);
     try {
       const { data: bData } = await supabase
         .from('businesses')
@@ -118,21 +118,21 @@ export function useBarberiaAdmin() {
       console.error(err);
       showToast('Error al conectar con la base de datos', 'error');
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   }, [supabase, showToast]);
 
   useEffect(() => {
     if (!supabase || !isAuthenticated) return;
-    loadData();
+    loadData(true);
 
     const channel = supabase
       .channel('barberia-admin-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_queue' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'workers' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'portfolio_items' }, loadData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_queue' }, () => loadData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workers' }, () => loadData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => loadData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'portfolio_items' }, () => loadData(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => loadData(false))
       .subscribe();
 
     return () => {
@@ -596,6 +596,6 @@ export function useBarberiaAdmin() {
     saveSchedule,
     copyScheduleToWeek,
     saveSettings,
-    refresh: loadData,
+    refresh: () => { loadData(false); },
   };
 }

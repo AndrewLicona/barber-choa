@@ -61,12 +61,15 @@ export function LiveQueueWidget({ barbers, businessType = 'barberia', businessSl
 
   const fetchQueue = useCallback(async () => {
     if (!selectedBarberId) return;
-    const { data } = await sb
+    const { data, error } = await sb
       .from('live_queue')
       .select('*')
       .eq('worker_id', selectedBarberId)
-      .in('status', ['WAITING', 'IN_SERVICE', 'waiting', 'in_service'])
+      .in('status', ['WAITING', 'IN_SERVICE'])
       .order('position', { ascending: true });
+    if (error) {
+      console.error('Error fetching live queue:', error);
+    }
     if (data) setQueue(data as LiveQueueItem[]);
     setLoading(false);
   }, [selectedBarberId]);

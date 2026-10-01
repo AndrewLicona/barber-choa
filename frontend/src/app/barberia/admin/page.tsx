@@ -108,11 +108,11 @@ export default function BarberiaAdminPage() {
         .select('id')
         .eq('slug', 'barberia')
         .maybeSingle();
-      const barberiaBizId = bData?.id || '11111111-1111-1111-1111-111111111111';
+      const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
 
       // 2. Cargar datos filtrados por business_id
       const [queueRes, workersRes, servicesRes, settingsRes] = await Promise.all([
-        supabase.from('live_queue').select('*, worker:workers(name)').eq('business_id', barberiaBizId).in('status', ['waiting', 'in_service', 'WAITING', 'IN_SERVICE']).order('position'),
+        supabase.from('live_queue').select('*, worker:workers(name)').eq('business_id', barberiaBizId).in('status', ['WAITING', 'IN_SERVICE']).order('position'),
         supabase.from('workers').select('*').eq('business_id', barberiaBizId).order('created_at'),
         supabase.from('services').select('*').eq('business_id', barberiaBizId).order('created_at'),
         supabase.from('business_settings').select('*').eq('business_id', barberiaBizId),

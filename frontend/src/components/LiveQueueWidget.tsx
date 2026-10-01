@@ -1,18 +1,18 @@
 // @ts-nocheck
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { LiveQueueItem, Worker } from '@/types/database';
 import { getSupabase } from '@/lib/supabase/client';
-import { Clock, Users, UserCheck, MessageSquare, X } from 'lucide-react';
-import { formatPhoneNumber } from '@/lib/whatsapp';
+import { Clock, Users, UserCheck, CheckCircle2, X } from 'lucide-react';
 
 interface Props {
   barbers?: Worker[];
   businessType?: string;
+  businessSlug?: string;
 }
 
-export function LiveQueueWidget({ barbers, businessType = 'barberia' }: Props) {
+export function LiveQueueWidget({ barbers, businessType = 'barberia', businessSlug }: Props) {
   const [queue, setQueue] = useState<LiveQueueItem[]>([]);
   const [allBarbers, setAllBarbers] = useState<Worker[]>(barbers || []);
   const [selectedBarberId, setSelectedBarberId] = useState<string>('');
@@ -21,17 +21,18 @@ export function LiveQueueWidget({ barbers, businessType = 'barberia' }: Props) {
   const [clientPhone, setClientPhone] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [joinSuccess, setJoinSuccess] = useState<{ position: number; workerName: string; estimatedWait: number } | null>(null);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   const sb = getSupabase();
 
-  // Seleccionar barbero con clientes activos, o el primero
-  const barberData = allBarbers.find(b => b.id === selectedBarberId) || null;
-  const inService = queue.find(q => q.status === 'in_service');
-  const waitingList = queue.filter(q => q.status === 'waiting');
+  const barberData = allBarbers.find((b) => b.id === selectedBarberId) || null;
+  const inService = queue.find((q) => q.status === 'in_service' || q.status === 'IN_SERVICE');
+  const waitingList = queue.filter((q) => q.status === 'waiting' || q.status === 'WAITING');
   const totalWaiting = waitingList.length;
   const estimatedWait = totalWaiting * 25 + (inService ? 15 : 0);
 
-  // Cargar todos los barberos del negocio
+  // Cargar barberos si no vienen por props
   useEffect(() => {
     if (barbers && barbers.length > 0) {
       setAllBarbers(barbers);
@@ -44,69 +45,77 @@ export function LiveQueueWidget({ barbers, businessType = 'barberia' }: Props) {
         .eq('business_type', businessType)
         .eq('is_active', true)
         .order('created_at');
-      if (data && data.length > 0) {
-        setAllBarbers(data as Worker[]);
-      }
+      if (data && data.length > 0) setAllBarbers(data as Worker[]);
     };
     loadBarbers();
   }, [businessType, barbers]);
 
-  // Cuando cambian los barbers, seleccionar el que tiene clientes o el primero
+  // Seleccionar primer barbero
   useEffect(() => {
     if (allBarbers.length === 0) return;
-    const withClients = allBarbers.find(b => b.id === selectedBarberId && queue.some(q => q.worker_id === b.id && (q.status === 'in_service' || q.status === 'waiting')));
-    if (!withClients) {
-      // Priorizar el que tiene accepts_appointments = false (sillón vivo) o el primero
-      const liveBarber = allBarbers.find(b => !b.accepts_appointments);
+    if (!selectedBarberId) {
+      const liveBarber = allBarbers.find((b) => !b.accepts_appointments);
       setSelectedBarberId(liveBarber?.id || allBarbers[0].id);
     }
   }, [allBarbers]);
 
-  const fetchQueue = async () => {
+  const fetchQueue = useCallback(async () => {
     if (!selectedBarberId) return;
     const { data } = await sb
       .from('live_queue')
       .select('*')
       .eq('worker_id', selectedBarberId)
-      .in('status', ['waiting', 'in_service'])
+      .in('status', ['WAITING', 'IN_SERVICE', 'waiting', 'in_service'])
       .order('position', { ascending: true });
-
     if (data) setQueue(data as LiveQueueItem[]);
     setLoading(false);
-  };
+  }, [selectedBarberId]);
 
   useEffect(() => {
     if (!selectedBarberId) return;
     fetchQueue();
-
-    // Realtime subscription
     const channel = sb
       .channel(`queue-${selectedBarberId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'live_queue' }, fetchQueue)
       .subscribe();
-
     return () => { sb.removeChannel(channel); };
-  }, [selectedBarberId]);
+  }, [selectedBarberId, fetchQueue]);
 
   const handleJoinQueue = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientName.trim() || !barberData) return;
+    if (!clientName.trim() || !clientPhone.trim() || !barberData) return;
     setIsSubmitting(true);
+    setJoinError(null);
 
-    await sb.from('live_queue').insert({
-      worker_id: barberData.id,
-      client_name: clientName.trim(),
-      client_phone: clientPhone.trim() || null,
-      status: inService ? 'waiting' : 'in_service',
-      position: waitingList.length + 1,
-      estimated_wait_minutes: estimatedWait,
-    });
+    const slug = businessSlug || businessType;
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+    try {
+      const res = await fetch(`${apiUrl}/appointments/queue/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          businessSlug: slug,
+          workerId: barberData.id,
+          clientName: clientName.trim(),
+          clientPhone: `+57${clientPhone.trim().replace(/\s+/g, '')}`,
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.message || 'No se pudo registrar en la fila.');
 
-    setClientName('');
-    setClientPhone('');
-    setIsSubmitting(false);
-    setShowJoinModal(false);
-    await fetchQueue();
+      setJoinSuccess({
+        position: payload.position,
+        workerName: payload.workerName,
+        estimatedWait: payload.estimatedWaitMinutes,
+      });
+      setClientName('');
+      setClientPhone('');
+      await fetchQueue();
+    } catch (err: any) {
+      setJoinError(err.message || 'Error al anotarse en la fila.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (loading || !barberData) {
@@ -130,15 +139,13 @@ export function LiveQueueWidget({ barbers, businessType = 'barberia' }: Props) {
             <span className="absolute bottom-1 right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full ring-2 ring-[#101014]" />
           </div>
           <div className="flex flex-col gap-1.5">
-            {/* Selector de barbero */}
             {allBarbers.length > 1 && (
               <select
                 value={selectedBarberId}
-                onChange={e => setSelectedBarberId(e.target.value)}
+                onChange={(e) => setSelectedBarberId(e.target.value)}
                 className="bg-black/60 border border-[#d4af37]/30 text-[#f3e5ab] text-xs font-mono rounded-lg px-2 py-1 pr-6 focus:outline-none focus:border-[#d4af37] appearance-none cursor-pointer"
-                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='%23d4af37'%3E%3Cpath d='M0 0l5 6 5-6z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center' }}
               >
-                {allBarbers.map(b => (
+                {allBarbers.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
@@ -151,7 +158,7 @@ export function LiveQueueWidget({ barbers, businessType = 'barberia' }: Props) {
                 </span>
               </div>
             )}
-            <p className="text-xs text-zinc-400">{barberData?.accepts_appointments ? 'Agenda tu cita' : 'Atención por orden de llegada'}</p>
+            <p className="text-xs text-zinc-400">Atención por orden de llegada</p>
           </div>
         </div>
 
@@ -211,24 +218,14 @@ export function LiveQueueWidget({ barbers, businessType = 'barberia' }: Props) {
         )}
       </div>
 
-      {/* Botones */}
-      <div className="mt-6 flex flex-col sm:flex-row gap-2.5">
+      {/* Botón anotarse */}
+      <div className="mt-6">
         <button
-          onClick={() => setShowJoinModal(true)}
-          className="flex-1 py-3 px-4 rounded-xl gold-button text-xs font-bold uppercase tracking-wider text-center"
+          onClick={() => { setShowJoinModal(true); setJoinSuccess(null); setJoinError(null); }}
+          className="w-full py-3 px-4 rounded-xl gold-button text-xs font-bold uppercase tracking-wider text-center"
         >
           Anotarme en la Fila
         </button>
-        <a
-          href={`https://wa.me/${formatPhoneNumber(barberData.phone)}?text=${encodeURIComponent(
-            `¡Hola ${barberData.name}! Estoy consultando el turno en vivo en Barber Choa. ¿Estás disponible?`
-          )}`}
-          target="_blank" rel="noopener noreferrer"
-          className="py-3 px-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 border border-white/[0.08] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-        >
-          <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-          <span>WhatsApp</span>
-        </a>
       </div>
 
       {/* Modal anotarse */}
@@ -238,31 +235,88 @@ export function LiveQueueWidget({ barbers, businessType = 'barberia' }: Props) {
             <button onClick={() => setShowJoinModal(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white">
               <X className="w-4 h-4" />
             </button>
-            <h3 className="font-luxury text-lg font-bold text-white mb-1">Anotarme con {barberData.name}</h3>
-            <p className="text-xs text-zinc-400 mb-5">Ingresa tu nombre para asegurar tu lugar en la fila.</p>
-            <form onSubmit={handleJoinQueue} className="space-y-4">
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">Tu Nombre Completo *</label>
-                <input type="text" required placeholder="Ej: Daniel Gómez" value={clientName} onChange={e => setClientName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/10 text-white placeholder-zinc-600 focus:outline-none focus:border-[#d4af37] text-xs transition-colors" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">WhatsApp (Opcional)</label>
-                <input type="tel" placeholder="Ej: 300 123 4567" value={clientPhone} onChange={e => setClientPhone(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/10 text-white placeholder-zinc-600 focus:outline-none focus:border-[#d4af37] text-xs transition-colors" />
-                <p className="text-[10px] text-zinc-500 mt-1">Te avisaremos cuando falte 1 turno.</p>
-              </div>
-              <div className="pt-2 flex items-center gap-2.5">
-                <button type="button" onClick={() => setShowJoinModal(false)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white bg-white/5">
-                  Cancelar
+
+            {joinSuccess ? (
+              <div className="text-center py-4">
+                <div className="w-14 h-14 rounded-full mx-auto flex items-center justify-center mb-4 bg-[#d4af37]/20 text-[#d4af37]">
+                  <CheckCircle2 className="w-9 h-9" />
+                </div>
+                <h3 className="font-luxury text-lg font-bold text-white mb-1">¡Estás en la fila!</h3>
+                {joinSuccess.position === 0 ? (
+                  <p className="text-sm text-emerald-400 font-semibold mb-1">¡Eres el siguiente! Pasa directamente.</p>
+                ) : (
+                  <p className="text-sm text-zinc-300 mb-1">
+                    Turno <span className="font-bold text-[#d4af37]">#{joinSuccess.position}</span> con{' '}
+                    <span className="font-bold">{joinSuccess.workerName}</span>
+                  </p>
+                )}
+                <p className="text-xs text-zinc-400 mb-5">Espera aproximada: ~{joinSuccess.estimatedWait} min</p>
+                <button
+                  onClick={() => setShowJoinModal(false)}
+                  className="py-2.5 px-6 rounded-xl gold-button text-xs font-bold uppercase tracking-wider"
+                >
+                  Cerrar
                 </button>
-                <button type="submit" disabled={isSubmitting}
-                  className="flex-1 py-2.5 rounded-xl gold-button text-xs font-bold uppercase tracking-wider shadow-md">
-                  {isSubmitting ? 'Guardando...' : 'Confirmar Turno'}
-                </button>
               </div>
-            </form>
+            ) : (
+              <>
+                <h3 className="font-luxury text-lg font-bold text-white mb-1">Anotarme con {barberData.name}</h3>
+                <p className="text-xs text-zinc-400 mb-5">
+                  Ingresa tu nombre y celular para reservar tu lugar en la fila.
+                </p>
+                <form onSubmit={handleJoinQueue} className="space-y-4">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
+                      Tu Nombre Completo *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej: Daniel Gómez"
+                      value={clientName}
+                      onChange={(e) => setClientName(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/10 text-white placeholder-zinc-600 focus:outline-none focus:border-[#d4af37] text-xs transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-300 mb-1.5">
+                      Celular / WhatsApp *
+                    </label>
+                    <div className="flex">
+                      <span className="inline-flex items-center px-2.5 rounded-l-xl border border-r-0 bg-black/60 border-white/10 text-[#d4af37] text-xs font-semibold select-none">+57</span>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="300 123 4567"
+                        value={clientPhone}
+                        onChange={(e) => setClientPhone(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-r-xl bg-black/50 border border-white/10 text-white placeholder-zinc-600 focus:outline-none focus:border-[#d4af37] text-xs transition-colors"
+                      />
+                    </div>
+                    <p className="text-[10px] text-zinc-500 mt-1">Te avisaremos cuando falte 1 turno.</p>
+                  </div>
+                  {joinError && (
+                    <p className="rounded-xl bg-red-500/10 p-3 text-xs text-red-300">{joinError}</p>
+                  )}
+                  <div className="pt-1 flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowJoinModal(false)}
+                      className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white bg-white/5"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="flex-1 py-2.5 rounded-xl gold-button text-xs font-bold uppercase tracking-wider shadow-md disabled:opacity-50"
+                    >
+                      {isSubmitting ? 'Guardando...' : 'Confirmar Turno'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}

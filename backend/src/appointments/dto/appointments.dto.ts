@@ -13,3 +13,10 @@ export class CreatePublicAppointmentDto extends AvailabilityQueryDto {
   @IsString() @IsNotEmpty() @MaxLength(30) clientPhone: string;
   @IsOptional() @IsString() @MaxLength(500) notes?: string;
 }
+
+export class JoinQueueDto {
+  @IsString() @IsNotEmpty() businessSlug: string;
+  @IsString() @IsNotEmpty() workerId: string;
+  @IsString() @IsNotEmpty() @MaxLength(120) clientName: string;
+  @IsString() @IsNotEmpty() @MaxLength(30) clientPhone: string;
+}

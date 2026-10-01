@@ -174,20 +174,29 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
 
         {!isSubmitted ? (
           <div>
-            <div className="pr-8 mb-6">
-              <span
-                className={`inline-block text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full mb-2 ${
-                  isBarber
-                    ? 'bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20'
-                    : 'bg-rose-50 text-rose-600 border border-rose-200'
-                }`}
-              >
-                {isBarber ? '💈 Reservar Cita - Barbería' : '💅 Reservar Cita - Manicura'}
-              </span>
-              <h3 className="text-xl font-extrabold tracking-tight">{service.title}</h3>
-              <p className={`text-xs mt-1 ${isBarber ? 'text-zinc-400' : 'text-stone-500'}`}>
-                ⏱️ {service.duration_minutes} min • 💵 {formatCurrency(service.price)}
-              </p>
+            <div className="flex items-start gap-3.5 pr-8 mb-6">
+              {service.image_url && (
+                <img
+                  src={service.image_url}
+                  alt={service.title}
+                  className="w-16 h-16 rounded-2xl object-cover ring-1 ring-[#d4af37]/30 flex-shrink-0"
+                />
+              )}
+              <div>
+                <span
+                  className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full mb-1.5 ${
+                    isBarber
+                      ? 'bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20'
+                      : 'bg-rose-50 text-rose-600 border border-rose-200'
+                  }`}
+                >
+                  {isBarber ? '💈 Reservar Cita - Barbería' : '💅 Reservar Cita - Manicura'}
+                </span>
+                <h3 className="text-lg sm:text-xl font-extrabold tracking-tight">{service.title}</h3>
+                <p className={`text-xs mt-0.5 ${isBarber ? 'text-zinc-400' : 'text-stone-500'}`}>
+                  ⏱️ {service.duration_minutes} min • 💵 {formatCurrency(service.price)}
+                </p>
+              </div>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">

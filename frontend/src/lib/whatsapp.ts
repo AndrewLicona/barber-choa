@@ -89,12 +89,13 @@ export function generateQueueAlertWhatsAppLink({
   clientName: string;
   clientPhone: string;
   position: number;
-  barberName: string;
+  barberName?: string;
 }): string {
+  const barber = barberName?.trim() || 'Barber Choa';
   const message = [
     `💈 *¡Atención ${clientName}!*`,
     ``,
-    `Tu turno con *${barberName}* en Barbería Choa está muy cerca:`,
+    `Tu turno con *${barber}* en Barbería Choa está muy cerca:`,
     `📍 Estás en la posición *#${position}* de la fila.`,
     ``,
     `Por favor acércate al local para que no pierdas tu turno. ¡Te esperamos! ✂️`,

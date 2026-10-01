@@ -9,11 +9,11 @@ import { getNestJSToken, getNestJSUser, nestJSLogout } from '@/lib/auth-context'
 import { canManageBusiness } from '@/lib/access-control';
 import { generateQueueAlertWhatsAppLink, formatCurrency } from '@/lib/whatsapp';
 import { uploadMedia } from '@/lib/media-upload';
-import { Worker, Service, LiveQueueItem, Schedule, DAY_NAMES } from '@/types/database';
+import { Worker, Service, LiveQueueItem, Schedule, PortfolioItem, DAY_NAMES } from '@/types/database';
 import {
   Users, UserCheck, CheckCircle2, UserPlus, Phone, Shield, Scissors,
   Settings, LogOut, Plus, Clock, Edit2, Save, X, Trash2, ToggleLeft, ToggleRight,
-  DollarSign, Tag, Timer, AlertCircle, Check, RefreshCw, Lock, Copy, Camera, Upload
+  DollarSign, Tag, Timer, AlertCircle, Check, RefreshCw, Lock, Copy, Camera, Upload, Image as ImageIcon
 } from 'lucide-react';
 
 export default function BarberiaAdminPage() {
@@ -22,7 +22,7 @@ export default function BarberiaAdminPage() {
 
   const [sessionLoading, setSessionLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'queue' | 'barbers' | 'services' | 'settings'>('queue');
+  const [activeTab, setActiveTab] = useState<'queue' | 'barbers' | 'services' | 'portfolio' | 'settings'>('queue');
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -31,6 +31,7 @@ export default function BarberiaAdminPage() {
   const [queue, setQueue] = useState<LiveQueueItem[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
 
@@ -57,7 +58,17 @@ export default function BarberiaAdminPage() {
   const [serviceFormPrice, setServiceFormPrice] = useState('');
   const [serviceFormDuration, setServiceFormDuration] = useState('30');
   const [serviceFormDesc, setServiceFormDesc] = useState('');
+  const [serviceFormImageUrl, setServiceFormImageUrl] = useState('');
+  const [uploadingServiceImage, setUploadingServiceImage] = useState(false);
   const [savingService, setSavingService] = useState(false);
+
+  // ─── Portafolio Forms ─────────────────────────────────────
+  const [showPortfolioModal, setShowPortfolioModal] = useState(false);
+  const [portfolioFormTitle, setPortfolioFormTitle] = useState('');
+  const [portfolioFormImageUrl, setPortfolioFormImageUrl] = useState('');
+  const [portfolioFormTags, setPortfolioFormTags] = useState('');
+  const [uploadingPortfolioImage, setUploadingPortfolioImage] = useState(false);
+  const [savingPortfolio, setSavingPortfolio] = useState(false);
 
   // ─── Horarios del barbero seleccionado ───────────────────
   const [selectedWorkerForSchedule, setSelectedWorkerForSchedule] = useState<Worker | null>(null);
@@ -67,7 +78,7 @@ export default function BarberiaAdminPage() {
   const [savingSettings, setSavingSettings] = useState(false);
 
   // ─── Confirmación de borrado ─────────────────────────────
-  const [deleteTarget, setDeleteTarget] = useState<{ type: 'worker' | 'service'; id: string; name: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ type: 'worker' | 'service' | 'portfolio'; id: string; name: string } | null>(null);
   const [deletingItem, setDeletingItem] = useState(false);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
@@ -111,17 +122,19 @@ export default function BarberiaAdminPage() {
       const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
 
       // 2. Cargar datos filtrados por business_id
-      const [queueRes, workersRes, servicesRes, settingsRes] = await Promise.all([
+      const [queueRes, workersRes, servicesRes, settingsRes, portfolioRes] = await Promise.all([
         supabase.from('live_queue').select('*, worker:workers(name)').eq('business_id', barberiaBizId).in('status', ['WAITING', 'IN_SERVICE']).order('position'),
         supabase.from('workers').select('*').eq('business_id', barberiaBizId).order('created_at'),
         supabase.from('services').select('*').eq('business_id', barberiaBizId).order('created_at'),
         supabase.from('business_settings').select('*').eq('business_id', barberiaBizId),
+        supabase.from('portfolio_items').select('*').eq('business_id', barberiaBizId).eq('is_active', true).order('created_at', { ascending: false }),
       ]);
 
       if (queueRes.data) setQueue(queueRes.data as LiveQueueItem[]);
       const loadedWorkers = (workersRes.data || []) as Worker[];
       setWorkers(loadedWorkers);
       if (servicesRes.data) setServices(servicesRes.data as Service[]);
+      if (portfolioRes.data) setPortfolio(portfolioRes.data as PortfolioItem[]);
       if (settingsRes.data) {
         const map: Record<string, string> = {};
         (settingsRes.data as { key: string; value: string }[]).forEach(s => { map[s.key] = s.value; });
@@ -158,6 +171,7 @@ export default function BarberiaAdminPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'live_queue' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'workers' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'portfolio_items' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, loadData)
       .subscribe();
 
@@ -381,14 +395,38 @@ export default function BarberiaAdminPage() {
       setServiceFormPrice(String(service.price));
       setServiceFormDuration(String(service.duration_minutes || 30));
       setServiceFormDesc(service.description || '');
+      setServiceFormImageUrl(service.image_url || '');
     } else {
       setEditingService(null);
       setServiceFormTitle('');
       setServiceFormPrice('');
       setServiceFormDuration('30');
       setServiceFormDesc('');
+      setServiceFormImageUrl('');
     }
     setShowServiceModal(true);
+  };
+
+  const handleServiceImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingServiceImage(true);
+    try {
+      const token = getNestJSToken();
+      if (!token) {
+        showToast('Sesión expirada', 'error');
+        return;
+      }
+
+      const publicUrl = await uploadMedia('services', file, token);
+      setServiceFormImageUrl(publicUrl);
+      showToast('Imagen del servicio subida correctamente');
+    } catch (err: any) {
+      showToast(err.message || 'Error al subir imagen', 'error');
+    } finally {
+      setUploadingServiceImage(false);
+    }
   };
 
   const handleSaveService = async (e: React.FormEvent) => {
@@ -405,13 +443,14 @@ export default function BarberiaAdminPage() {
         .select('id')
         .eq('slug', 'barberia')
         .maybeSingle();
-      const barberiaBizId = bData?.id || '11111111-1111-1111-1111-111111111111';
+      const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
 
       const updateData = {
         title: serviceFormTitle.trim(),
         price: Number(serviceFormPrice),
         duration_minutes: Number(serviceFormDuration) || 30,
         description: serviceFormDesc.trim() || null,
+        image_url: serviceFormImageUrl.trim() || null,
         business_type: 'barberia',
         is_active: true,
       };
@@ -455,6 +494,88 @@ export default function BarberiaAdminPage() {
       showToast('Servicio eliminado correctamente');
     } catch (err: any) {
       showToast(err?.message || 'Error al eliminar servicio', 'error');
+    } finally {
+      setDeletingItem(false);
+    }
+  };
+
+  // ══════════════════════════════════════════════════════════
+  // CRUD PORTAFOLIO
+  // ══════════════════════════════════════════════════════════
+  const handlePortfolioImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingPortfolioImage(true);
+    try {
+      const token = getNestJSToken();
+      if (!token) {
+        showToast('Sesión expirada', 'error');
+        return;
+      }
+
+      const publicUrl = await uploadMedia('portfolio', file, token);
+      setPortfolioFormImageUrl(publicUrl);
+      showToast('Foto de portafolio subida correctamente');
+    } catch (err: any) {
+      showToast(err.message || 'Error al subir foto', 'error');
+    } finally {
+      setUploadingPortfolioImage(false);
+    }
+  };
+
+  const handleSavePortfolio = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!portfolioFormImageUrl.trim()) {
+      showToast('Sube o ingresa una imagen para el portafolio', 'error');
+      return;
+    }
+    setSavingPortfolio(true);
+    try {
+      const { data: bData } = await supabase
+        .from('businesses')
+        .select('id')
+        .eq('slug', 'barberia')
+        .maybeSingle();
+      const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
+
+      const tagsArray = portfolioFormTags
+        .split(',')
+        .map(t => t.trim())
+        .filter(Boolean);
+
+      const { error } = await supabase.from('portfolio_items').insert({
+        business_id: barberiaBizId,
+        title: portfolioFormTitle.trim() || 'Trabajo Barber Choa',
+        image_url: portfolioFormImageUrl.trim(),
+        tags: tagsArray.length > 0 ? tagsArray : ['Barbería', 'Corte'],
+        is_active: true,
+      });
+
+      if (error) throw error;
+      showToast('Foto agregada al portafolio');
+      setShowPortfolioModal(false);
+      setPortfolioFormTitle('');
+      setPortfolioFormImageUrl('');
+      setPortfolioFormTags('');
+      await loadData();
+    } catch (err: any) {
+      showToast(err?.message || 'Error al guardar foto en portafolio', 'error');
+    } finally {
+      setSavingPortfolio(false);
+    }
+  };
+
+  const handleDeletePortfolio = async (id: string) => {
+    setDeletingItem(true);
+    try {
+      const { error } = await supabase.from('portfolio_items').delete().eq('id', id);
+      if (error) throw error;
+      setDeleteTarget(null);
+      await loadData();
+      showToast('Foto eliminada del portafolio');
+    } catch (err: any) {
+      showToast(err?.message || 'Error al eliminar foto', 'error');
     } finally {
       setDeletingItem(false);
     }
@@ -632,6 +753,7 @@ export default function BarberiaAdminPage() {
             { key: 'queue', icon: <Clock className="w-4 h-4" />, label: `Turnos en Vivo (${queue.length})` },
             { key: 'barbers', icon: <Scissors className="w-4 h-4" />, label: `Barberos & Horarios (${workers.length})` },
             { key: 'services', icon: <Tag className="w-4 h-4" />, label: `Cortes & Barba (${services.length})` },
+            { key: 'portfolio', icon: <Camera className="w-4 h-4" />, label: `Portafolio (${portfolio.length})` },
             { key: 'settings', icon: <Settings className="w-4 h-4" />, label: 'Configuración' },
           ] as const).map(tab => (
             <button
@@ -756,7 +878,7 @@ export default function BarberiaAdminPage() {
                                 clientPhone: item.client_phone,
                                 clientName: item.client_name,
                                 position: idx + 1,
-                                estimatedWaitMinutes: (idx + 1) * 20,
+                                barberName: item.worker?.name || workers.find(w => w.id === item.worker_id)?.name || 'Barber Choa',
                               })}
                               target="_blank"
                               rel="noopener noreferrer"
@@ -1030,6 +1152,11 @@ export default function BarberiaAdminPage() {
                     }`}
                   >
                     <div>
+                      {service.image_url && (
+                        <div className="w-full h-32 rounded-xl overflow-hidden mb-2.5 bg-black/40 border border-white/5">
+                          <img src={service.image_url} alt={service.title} className="w-full h-full object-cover" />
+                        </div>
+                      )}
                       <div className="flex items-start justify-between gap-2">
                         <h4 className="text-sm font-bold text-white leading-snug">{service.title}</h4>
                         {!service.is_active && (
@@ -1075,6 +1202,84 @@ export default function BarberiaAdminPage() {
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════ TAB: PORTAFOLIO BARBERÍA ═══════════════ */}
+        {activeTab === 'portfolio' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-mono uppercase tracking-widest text-zinc-400 font-bold">
+                  Galería & Portafolio ({portfolio.length})
+                </h3>
+                <p className="text-[11px] text-zinc-500 mt-0.5">
+                  Fotos de cortes y trabajos destacados que verán los clientes en la web.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setPortfolioFormTitle('');
+                  setPortfolioFormImageUrl('');
+                  setPortfolioFormTags('');
+                  setShowPortfolioModal(true);
+                }}
+                className="flex items-center gap-1.5 py-2 px-3.5 rounded-xl gold-button text-xs font-bold uppercase tracking-wider"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Añadir Foto</span>
+              </button>
+            </div>
+
+            {portfolio.length === 0 ? (
+              <div className="p-12 text-center rounded-2xl border border-dashed border-white/[0.07] bg-black/20">
+                <Camera className="w-8 h-8 text-zinc-600 mx-auto mb-3" />
+                <p className="text-sm text-zinc-400 font-semibold">No hay fotos en el portafolio</p>
+                <p className="text-xs text-zinc-500 mt-1">Sube fotos de tus mejores degradados o barbas con el botón &quot;Añadir Foto&quot;.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {portfolio.map((item) => (
+                  <div
+                    key={item.id}
+                    className="group relative rounded-2xl overflow-hidden bg-[#121216] border border-white/[0.08] flex flex-col"
+                  >
+                    <div className="relative aspect-[4/5] overflow-hidden bg-black/40">
+                      <img
+                        src={item.image_url}
+                        alt={item.title || 'Trabajo Barber Choa'}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90" />
+                      
+                      {/* Botón eliminar */}
+                      <button
+                        onClick={() => setDeleteTarget({ type: 'portfolio', id: item.id, name: item.title || 'Foto de portafolio' })}
+                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/70 hover:bg-rose-600/90 text-zinc-300 hover:text-white border border-white/10 transition-colors shadow-lg"
+                        title="Eliminar foto"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Info en la foto */}
+                      <div className="absolute bottom-2.5 left-2.5 right-2.5">
+                        <p className="text-xs font-bold text-white truncate">{item.title || 'Corte Barber Choa'}</p>
+                        {item.tags && item.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {item.tags.slice(0, 2).map((tag, i) => (
+                              <span key={i} className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-zinc-300 border border-white/10">
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1304,6 +1509,46 @@ export default function BarberiaAdminPage() {
                 />
               </div>
 
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1">Foto del Servicio (Opcional)</label>
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-xl overflow-hidden bg-black/60 border border-white/10 flex-shrink-0 flex items-center justify-center relative">
+                    {serviceFormImageUrl ? (
+                      <img src={serviceFormImageUrl} alt="Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <Scissors className="w-5 h-5 text-zinc-600" />
+                    )}
+                    {uploadingServiceImage && (
+                      <div className="absolute inset-0 bg-black/75 flex items-center justify-center">
+                        <Upload className="w-4 h-4 text-[#d4af37] animate-pulse" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <label className="cursor-pointer block">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={handleServiceImageUpload}
+                        className="hidden"
+                        disabled={uploadingServiceImage}
+                      />
+                      <span className="flex items-center justify-center gap-1.5 w-full py-2 px-3 rounded-xl bg-[#d4af37]/15 border border-[#d4af37]/30 text-[#f3e5ab] text-xs font-semibold hover:bg-[#d4af37]/25 transition-colors">
+                        <Camera className="w-3.5 h-3.5" />
+                        {uploadingServiceImage ? 'Subiendo...' : 'Subir Foto'}
+                      </span>
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="O pega URL de la foto..."
+                      value={serviceFormImageUrl}
+                      onChange={e => setServiceFormImageUrl(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-black/40 border border-white/10 text-white text-[11px] focus:outline-none focus:border-[#d4af37]"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
@@ -1314,10 +1559,105 @@ export default function BarberiaAdminPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={savingService}
-                  className="flex-1 py-2.5 rounded-xl gold-button text-xs font-bold uppercase tracking-wider"
+                  disabled={savingService || uploadingServiceImage}
+                  className="flex-1 py-2.5 rounded-xl gold-button text-xs font-bold uppercase tracking-wider disabled:opacity-50"
                 >
                   {savingService ? 'Guardando...' : editingService ? 'Actualizar' : 'Guardar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════ MODAL: PORTAFOLIO ═══════════════ */}
+      {showPortfolioModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-[#121216] border border-[#d4af37]/30 rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white font-luxury">Añadir Foto al Portafolio</h3>
+              <button onClick={() => setShowPortfolioModal(false)} className="text-zinc-500 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePortfolio} className="space-y-3.5">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1">Título / Estilo del Trabajo</label>
+                <input
+                  type="text"
+                  placeholder="Ej: Fade Medio con Barba Perfilada"
+                  value={portfolioFormTitle}
+                  onChange={e => setPortfolioFormTitle(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-black/50 border border-white/10 text-white text-xs focus:outline-none focus:border-[#d4af37]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1">Foto del Corte / Trabajo *</label>
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-20 rounded-xl overflow-hidden bg-black border border-white/10 flex-shrink-0 flex items-center justify-center relative">
+                    {portfolioFormImageUrl ? (
+                      <img src={portfolioFormImageUrl} alt="Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <Camera className="w-6 h-6 text-zinc-600" />
+                    )}
+                    {uploadingPortfolioImage && (
+                      <div className="absolute inset-0 bg-black/75 flex items-center justify-center">
+                        <Upload className="w-4 h-4 text-[#d4af37] animate-pulse" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <label className="cursor-pointer block">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={handlePortfolioImageUpload}
+                        className="hidden"
+                        disabled={uploadingPortfolioImage}
+                      />
+                      <span className="flex items-center justify-center gap-1.5 w-full py-2 px-3 rounded-xl bg-[#d4af37]/15 border border-[#d4af37]/30 text-[#f3e5ab] text-xs font-semibold hover:bg-[#d4af37]/25 transition-colors">
+                        <Upload className="w-3.5 h-3.5" />
+                        {uploadingPortfolioImage ? 'Subiendo...' : 'Subir desde dispositivo'}
+                      </span>
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="O pega URL de la imagen..."
+                      value={portfolioFormImageUrl}
+                      onChange={e => setPortfolioFormImageUrl(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-black/40 border border-white/10 text-white text-[11px] focus:outline-none focus:border-[#d4af37]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-300 mb-1">Etiquetas (separadas por coma)</label>
+                <input
+                  type="text"
+                  placeholder="Ej: Fade, Barba, Clásico, Freestyle"
+                  value={portfolioFormTags}
+                  onChange={e => setPortfolioFormTags(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl bg-black/50 border border-white/10 text-white text-xs focus:outline-none focus:border-[#d4af37]"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPortfolioModal(false)}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-zinc-400 bg-white/5 hover:bg-white/10 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPortfolio || uploadingPortfolioImage || !portfolioFormImageUrl.trim()}
+                  className="flex-1 py-2.5 rounded-xl gold-button text-xs font-bold uppercase tracking-wider disabled:opacity-50"
+                >
+                  {savingPortfolio ? 'Guardando...' : 'Publicar'}
                 </button>
               </div>
             </form>
@@ -1333,7 +1673,7 @@ export default function BarberiaAdminPage() {
               <Trash2 className="w-6 h-6 text-rose-400" />
             </div>
             <h3 className="text-lg font-bold text-white font-luxury">
-              ¿Eliminar {deleteTarget.type === 'worker' ? 'Barbero' : 'Servicio'}?
+              ¿Eliminar {deleteTarget.type === 'worker' ? 'Barbero' : deleteTarget.type === 'service' ? 'Servicio' : 'Foto del Portafolio'}?
             </h3>
             <p className="text-xs text-zinc-400">
               Vas a eliminar <span className="font-bold text-white">&quot;{deleteTarget.name}&quot;</span> de Barbería Choa.
@@ -1347,9 +1687,11 @@ export default function BarberiaAdminPage() {
                 Cancelar
               </button>
               <button
-                onClick={() => deleteTarget.type === 'worker'
-                  ? handleDeleteWorker(deleteTarget.id)
-                  : handleDeleteService(deleteTarget.id)}
+                onClick={() => {
+                  if (deleteTarget.type === 'worker') handleDeleteWorker(deleteTarget.id);
+                  else if (deleteTarget.type === 'service') handleDeleteService(deleteTarget.id);
+                  else if (deleteTarget.type === 'portfolio') handleDeletePortfolio(deleteTarget.id);
+                }}
                 disabled={deletingItem}
                 className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-rose-600/30"
               >

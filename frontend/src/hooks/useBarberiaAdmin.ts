@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabase } from '@/lib/supabase/client';
-import { getNestJSToken, getNestJSUser, nestJSLogout } from '@/lib/auth-context';
+import { getNestJSToken, getNestJSUser, nestJSLogout, nestJSFetch } from '@/lib/auth-context';
 import { Worker, Service, LiveQueueItem, Schedule, PortfolioItem } from '@/types/database';
 import { ToastData } from '@/components/ui/Toast';
 
@@ -25,6 +25,9 @@ export function useBarberiaAdmin() {
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
+  const [business, setBusiness] = useState<Record<string, any> | null>(null);
+  const [isAdmin, setIsAdmin] = useState(true);
+  const [userRole, setUserRole] = useState<string>('ADMIN');
 
   const showToast = useCallback((text: string, type: 'success' | 'error' = 'success') => {
     setToastMessage({ text, type });
@@ -44,6 +47,11 @@ export function useBarberiaAdmin() {
       } else {
         setIsAuthenticated(true);
         setUserEmail(user.email || 'Administrador Barbería');
+        const role = (user.role || '').toUpperCase();
+        setUserRole(role);
+        // Barbers have role 'WORKER' or 'WORKER_WALKIN'
+        const isWorkerOnly = role.includes('WORKER');
+        setIsAdmin(!isWorkerOnly);
       }
       setSessionLoading(false);
     };
@@ -58,10 +66,11 @@ export function useBarberiaAdmin() {
     try {
       const { data: bData } = await supabase
         .from('businesses')
-        .select('id')
+        .select('id, name, phone, address, instagram_url, logo_url, description, booking_message')
         .eq('slug', 'barberia')
         .maybeSingle();
       const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
+      if (bData) setBusiness(bData);
 
       const [queueRes, workersRes, servicesRes, settingsRes, portfolioRes] = await Promise.all([
         supabase
@@ -209,7 +218,7 @@ export function useBarberiaAdmin() {
     }
   };
 
-  // 4. Barber handlers
+  // 4. Barber handlers — creates via NestJS API to get credentials back
   const saveBarber = async (
     editingWorker: Worker | null,
     data: {
@@ -219,52 +228,58 @@ export function useBarberiaAdmin() {
       avatar_url?: string;
       accepts_appointments: boolean;
     },
-  ) => {
-    if (!supabase) return;
+  ): Promise<{ credentials?: { email: string; password: string } } | void> => {
     try {
-      const { data: bData } = await supabase
-        .from('businesses')
-        .select('id')
-        .eq('slug', 'barberia')
-        .maybeSingle();
-      const barberiaBizId = bData?.id || '11111111-1111-1111-1111-111111111111';
-
-      const payload = {
-        name: data.name.trim(),
-        phone: data.phone.trim(),
-        bio: data.bio?.trim() || null,
-        accepts_appointments: data.accepts_appointments,
-        business_type: 'barberia',
-        is_active: true,
-        avatar_url: data.avatar_url?.trim() || '/logo_barberchoa.jpg',
-      };
-
       if (editingWorker) {
-        const { error } = await supabase.from('workers').update(payload).eq('id', editingWorker.id);
+        // Update via Supabase directly (no credential generation needed)
+        if (!supabase) throw new Error('No Supabase');
+        const { error } = await supabase.from('workers').update({
+          name: data.name.trim(),
+          phone: data.phone.trim(),
+          bio: data.bio?.trim() || null,
+          accepts_appointments: data.accepts_appointments,
+          avatar_url: data.avatar_url?.trim() || editingWorker.avatar_url || '/logo_barberchoa.jpg',
+        }).eq('id', editingWorker.id);
         if (error) throw error;
+        await loadData();
         showToast('Barbero actualizado exitosamente');
+        return;
       } else {
-        const insertPayload = { ...payload, business_id: barberiaBizId };
-        const { data: newW, error } = await supabase
-          .from('workers')
-          .insert(insertPayload)
-          .select()
-          .single();
-        if (error) throw error;
-
-        if (newW) {
-          const defaultSchedules = [1, 2, 3, 4, 5, 6].map((day) => ({
-            worker_id: newW.id,
-            day_of_week: day,
-            start_time: '09:00',
-            end_time: '18:00',
-            is_active: true,
-          }));
-          await supabase.from('schedules').insert(defaultSchedules);
+        if (!isAdmin) {
+          showToast('Solo el administrador puede crear barberos', 'error');
+          throw new Error('Solo el administrador puede crear barberos');
         }
+        // Create via NestJS API to generate credentials
+        const { data: bData } = await supabase
+          .from('businesses')
+          .select('id')
+          .eq('slug', 'barberia')
+          .maybeSingle();
+        const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
+
+        const res = await nestJSFetch('/workers', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: data.name.trim(),
+            phone: data.phone.trim(),
+            bio: data.bio?.trim() || undefined,
+            avatar_url: data.avatar_url?.trim() || '/logo_barberchoa.jpg',
+            accepts_appointments: data.accepts_appointments,
+            business_id: barberiaBizId,
+            business_type: 'barberia',
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData?.message || `Error al crear barbero (${res.status})`);
+        }
+
+        const newWorker = await res.json();
+        await loadData();
         showToast('Barbero creado exitosamente');
+        return { credentials: newWorker.credentials };
       }
-      await loadData();
     } catch (err: any) {
       showToast(err?.message || 'Error al guardar barbero', 'error');
       throw err;
@@ -469,8 +484,12 @@ export function useBarberiaAdmin() {
     }
   };
 
-  // 8. Settings handler
+  // 8. Settings handler — saves to BOTH business_settings AND businesses table
   const saveSettings = async (newSettings: Record<string, string>) => {
+    if (!isAdmin) {
+      showToast('Solo el administrador puede modificar la configuración', 'error');
+      throw new Error('Solo el administrador puede modificar la configuración');
+    }
     if (!supabase) return;
     try {
       const { data: bData } = await supabase
@@ -480,16 +499,40 @@ export function useBarberiaAdmin() {
         .maybeSingle();
       const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
 
-      const updates = Object.entries(newSettings).map(([key, value]) => ({
-        business_id: barberiaBizId,
-        key,
-        value,
-      }));
+      // Save all settings to business_settings key-value store
+      const updates = Object.entries(newSettings)
+        .filter(([, value]) => value !== undefined && value !== null)
+        .map(([key, value]) => ({
+          business_id: barberiaBizId,
+          key,
+          value,
+        }));
 
-      const { error } = await supabase
-        .from('business_settings')
-        .upsert(updates, { onConflict: 'business_id,key' });
-      if (error) throw error;
+      if (updates.length > 0) {
+        const { error } = await supabase
+          .from('business_settings')
+          .upsert(updates, { onConflict: 'key' });
+        if (error) throw error;
+      }
+
+      // Also update the businesses table directly for core fields
+      const businessUpdate: Record<string, string> = {};
+      if (newSettings['business_name']) businessUpdate.name = newSettings['business_name'];
+      if (newSettings['whatsapp_number']) businessUpdate.phone = newSettings['whatsapp_number'];
+      if (newSettings['address']) businessUpdate.address = newSettings['address'];
+      if (newSettings['instagram_url']) businessUpdate.instagram_url = newSettings['instagram_url'];
+      if (newSettings['logo_url']) businessUpdate.logo_url = newSettings['logo_url'];
+      if (newSettings['description']) businessUpdate.description = newSettings['description'];
+      if (newSettings['booking_message']) businessUpdate.booking_message = newSettings['booking_message'];
+
+      if (Object.keys(businessUpdate).length > 0) {
+        const { error: bizError } = await supabase
+          .from('businesses')
+          .update(businessUpdate)
+          .eq('slug', 'barberia');
+        if (bizError) throw bizError;
+      }
+
       setSettings(newSettings);
       showToast('Configuración guardada correctamente');
     } catch (err: any) {
@@ -503,6 +546,8 @@ export function useBarberiaAdmin() {
     sessionLoading,
     isAuthenticated,
     userEmail,
+    isAdmin,
+    userRole,
     loading,
     toastMessage,
     queue,
@@ -511,6 +556,7 @@ export function useBarberiaAdmin() {
     portfolio,
     schedules,
     settings,
+    business,
 
     // Actions
     showToast,

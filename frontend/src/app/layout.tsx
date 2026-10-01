@@ -37,7 +37,12 @@ export const metadata: Metadata = {
   description: "Plataforma oficial para Barbería Choa y Choa Nails & Spa. Consulta turnos en vivo en tiempo real y reserva tu cita sin esperas.",
   manifest: "/manifest.json",
   icons: {
-    icon: "/favicon.ico",
+    icon: [
+      { url: "/favicon-barberia.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon.ico" },
+    ],
+    shortcut: "/favicon-barberia.png",
+    apple: "/apple-icon.png",
   },
 };
 

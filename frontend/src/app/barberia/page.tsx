@@ -21,12 +21,12 @@ export default function BarberiaPage() {
     masterBarber,
     collabBarbers,
     loading,
+    phone,
+    business,
   } = useBarberiaData();
 
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
-
-  const phone = masterBarber?.phone || '';
 
   const handleOpenBooking = (service?: Service) => {
     setSelectedService(service || services[0] || null);

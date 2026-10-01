@@ -19,7 +19,7 @@ interface AdminBarbersSectionProps {
       avatar_url?: string;
       accepts_appointments: boolean;
     },
-  ) => Promise<void>;
+  ) => Promise<{ credentials?: { email: string; password: string } } | void>;
   onToggleActive: (worker: Worker) => Promise<void>;
   onDeleteRequest: (worker: Worker) => void;
   onSaveSchedule: (
@@ -28,6 +28,7 @@ interface AdminBarbersSectionProps {
     data: { start_time: string; end_time: string; is_active: boolean },
   ) => Promise<void>;
   onCopyWeekSchedule: (workerId: string) => Promise<void>;
+  isAdmin?: boolean;
   onError?: (msg: string) => void;
 }
 
@@ -39,6 +40,7 @@ export function AdminBarbersSection({
   onDeleteRequest,
   onSaveSchedule,
   onCopyWeekSchedule,
+  isAdmin = true,
   onError,
 }: AdminBarbersSectionProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -66,22 +68,26 @@ export function AdminBarbersSection({
             Administra especialistas, disponibilidad de citas y horarios
           </p>
         </div>
-        <Button
-          variant="gold"
-          size="sm"
-          onClick={openNew}
-          leftIcon={<Plus className="w-4 h-4" />}
-        >
-          Nuevo Barbero
-        </Button>
+        {isAdmin && (
+          <Button
+            variant="gold"
+            size="sm"
+            onClick={openNew}
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
+            Nuevo Barbero
+          </Button>
+        )}
       </div>
 
       {workers.length === 0 ? (
         <div className="p-8 text-center rounded-2xl border border-dashed border-white/10 bg-[#121216]">
           <p className="text-xs text-zinc-400">No hay barberos registrados.</p>
-          <Button variant="gold" size="sm" onClick={openNew} className="mt-3">
-            Crear el primer barbero
-          </Button>
+          {isAdmin && (
+            <Button variant="gold" size="sm" onClick={openNew} className="mt-3">
+              Crear el primer barbero
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -162,13 +168,15 @@ export function AdminBarbersSection({
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
-                  <button
-                    onClick={() => onDeleteRequest(worker)}
-                    className="p-2 text-zinc-400 hover:text-red-400 rounded-lg hover:bg-white/5 border border-white/5 transition-colors"
-                    title="Eliminar Barbero"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => onDeleteRequest(worker)}
+                      className="p-2 text-zinc-400 hover:text-red-400 rounded-lg hover:bg-white/5 border border-white/5 transition-colors"
+                      title="Eliminar Barbero"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

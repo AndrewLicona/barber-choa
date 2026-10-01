@@ -20,6 +20,7 @@ export default function BarberiaAdminPage() {
     sessionLoading,
     isAuthenticated,
     userEmail,
+    isAdmin,
     loading,
     toastMessage,
     dismissToast,
@@ -30,6 +31,7 @@ export default function BarberiaAdminPage() {
     portfolio,
     schedules,
     settings,
+    business,
     handleLogout,
     advanceQueue,
     addWalkInToQueue,
@@ -114,11 +116,15 @@ export default function BarberiaAdminPage() {
       icon: Camera,
       badge: portfolio.length > 0 ? portfolio.length : undefined,
     },
-    {
-      id: 'settings' as const,
-      label: 'Configuración',
-      icon: Settings,
-    },
+    ...(isAdmin
+      ? [
+          {
+            id: 'settings' as const,
+            label: 'Configuración',
+            icon: Settings,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -233,6 +239,7 @@ export default function BarberiaAdminPage() {
               <AdminBarbersSection
                 workers={workers}
                 schedules={schedules}
+                isAdmin={isAdmin}
                 onSaveBarber={saveBarber}
                 onToggleActive={toggleBarberActive}
                 onDeleteRequest={(w: Worker) =>
@@ -274,6 +281,7 @@ export default function BarberiaAdminPage() {
             {activeTab === 'settings' && (
               <AdminSettingsSection
                 settings={settings}
+                business={business}
                 onSaveSettings={saveSettings}
                 onError={(msg) => showToast(msg, 'error')}
               />

@@ -6,6 +6,7 @@ import { getSupabase } from '@/lib/supabase/client';
 import { Service, Worker, PortfolioItem } from '@/types/database';
 
 export function useBarberiaData() {
+  const [business, setBusiness] = useState<{ id: string; name: string; phone: string; address?: string } | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
@@ -18,7 +19,8 @@ export function useBarberiaData() {
     if (!sb) return;
 
     try {
-      const [workersRes, servicesRes, portfolioRes] = await Promise.all([
+      const [bizRes, workersRes, servicesRes, portfolioRes] = await Promise.all([
+        sb.from('businesses').select('*').eq('slug', 'barberia').maybeSingle(),
         sb
           .from('workers')
           .select('*')
@@ -37,6 +39,10 @@ export function useBarberiaData() {
           .eq('is_active', true)
           .order('created_at', { ascending: false }),
       ]);
+
+      if (bizRes.data) {
+        setBusiness(bizRes.data);
+      }
 
       if (workersRes.data) {
         const loadedWorkers = workersRes.data as Worker[];
@@ -67,8 +73,9 @@ export function useBarberiaData() {
 
     const channel = sb
       .channel('barberia-public-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'businesses' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'workers' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'portfolio_items' }, loadData)
       .subscribe();
 
@@ -77,7 +84,11 @@ export function useBarberiaData() {
     };
   }, [loadData]);
 
+  const activePhone = business?.phone || masterBarber?.phone || '+573001234567';
+
   return {
+    business,
+    phone: activePhone,
     services,
     workers,
     portfolio,

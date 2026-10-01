@@ -88,6 +88,7 @@ export function LiveQueueWidget({ barbers, businessType = 'barberia', businessSl
     setJoinError(null);
 
     const slug = businessSlug || businessType;
+    const cleanPhone = clientPhone.trim().replace(/\s+/g, '').replace(/^\+57/, '').replace(/^57/, '');
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
     try {
       const res = await fetch(`${apiUrl}/appointments/queue/join`, {
@@ -97,7 +98,7 @@ export function LiveQueueWidget({ barbers, businessType = 'barberia', businessSl
           businessSlug: slug,
           workerId: barberData.id,
           clientName: clientName.trim(),
-          clientPhone: `+57${clientPhone.trim().replace(/\s+/g, '')}`,
+          clientPhone: `+57${cleanPhone}`,
         }),
       });
       const payload = await res.json();

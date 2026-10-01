@@ -112,7 +112,7 @@ export default function BarberiaAdminPage() {
 
       // 2. Cargar datos filtrados por business_id
       const [queueRes, workersRes, servicesRes, settingsRes] = await Promise.all([
-        supabase.from('live_queue').select('*, worker:workers(name)').eq('business_id', barberiaBizId).in('status', ['waiting', 'in_service']).order('position'),
+        supabase.from('live_queue').select('*, worker:workers(name)').eq('business_id', barberiaBizId).in('status', ['waiting', 'in_service', 'WAITING', 'IN_SERVICE']).order('position'),
         supabase.from('workers').select('*').eq('business_id', barberiaBizId).order('created_at'),
         supabase.from('services').select('*').eq('business_id', barberiaBizId).order('created_at'),
         supabase.from('business_settings').select('*').eq('business_id', barberiaBizId),
@@ -177,16 +177,16 @@ export default function BarberiaAdminPage() {
   // ══════════════════════════════════════════════════════════
   // COLA EN VIVO
   // ══════════════════════════════════════════════════════════
-  const inService = queue.find(q => q.status === 'in_service');
-  const waitingList = queue.filter(q => q.status === 'waiting');
+  const inService = queue.find(q => q.status?.toLowerCase() === 'in_service');
+  const waitingList = queue.filter(q => q.status?.toLowerCase() === 'waiting');
 
   const handleNextTurn = async () => {
     try {
       if (inService) {
-        await supabase.from('live_queue').update({ status: 'finished' }).eq('id', inService.id);
+        await supabase.from('live_queue').update({ status: 'FINISHED' }).eq('id', inService.id);
       }
       if (waitingList.length > 0) {
-        await supabase.from('live_queue').update({ status: 'in_service' }).eq('id', waitingList[0].id);
+        await supabase.from('live_queue').update({ status: 'IN_SERVICE' }).eq('id', waitingList[0].id);
       }
       await loadData();
       showToast('Turno avanzado correctamente');
@@ -206,11 +206,19 @@ export default function BarberiaAdminPage() {
 
     setAddingToQueue(true);
     try {
+      const { data: bData } = await supabase
+        .from('businesses')
+        .select('id')
+        .eq('slug', 'barberia')
+        .maybeSingle();
+      const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
+
       const { error } = await supabase.from('live_queue').insert({
+        business_id: barberiaBizId,
         worker_id: masterBarber.id,
         client_name: newClientName.trim(),
         client_phone: newClientPhone.trim() || null,
-        status: inService ? 'waiting' : 'in_service',
+        status: inService ? 'WAITING' : 'IN_SERVICE',
         position: waitingList.length + 1,
         estimated_wait_minutes: waitingList.length * 25,
       });
@@ -229,7 +237,7 @@ export default function BarberiaAdminPage() {
 
   const handleRemoveFromQueue = async (id: string) => {
     try {
-      await supabase.from('live_queue').update({ status: 'cancelled' }).eq('id', id);
+      await supabase.from('live_queue').update({ status: 'CANCELLED' }).eq('id', id);
       await loadData();
       showToast('Turno retirado');
     } catch (err: any) {

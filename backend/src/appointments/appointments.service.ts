@@ -123,6 +123,30 @@ export class AppointmentsService {
           service: { select: { title: true, price: true } },
         },
       });
+
+      // Añadir automáticamente a la fila en vivo (live_queue) para que aparezca en la plataforma
+      const activeQueue = await tx.liveQueueItem.findMany({
+        where: { worker_id: result.worker.id, status: { in: [QueueStatus.WAITING, QueueStatus.IN_SERVICE] } },
+        orderBy: { position: 'asc' },
+      });
+      const inService = activeQueue.find((q) => q.status === QueueStatus.IN_SERVICE);
+      const waiting = activeQueue.filter((q) => q.status === QueueStatus.WAITING);
+      const position = waiting.length + 1;
+      const estimatedWait = waiting.length * 25 + (inService ? 15 : 0);
+      const queueStatus = inService ? QueueStatus.WAITING : QueueStatus.IN_SERVICE;
+
+      await tx.liveQueueItem.create({
+        data: {
+          business_id: result.business.id,
+          worker_id: result.worker.id,
+          client_name: `${dto.clientName.trim()} (Cita ${dto.startTime})`,
+          client_phone: dto.clientPhone.trim(),
+          status: queueStatus,
+          position,
+          estimated_wait_minutes: estimatedWait,
+        },
+      });
+
       return appointment;
     });
   }

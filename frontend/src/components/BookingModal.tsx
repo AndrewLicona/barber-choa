@@ -103,6 +103,8 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
       String(chosenDate.getMonth() + 1).padStart(2, '0'),
       String(chosenDate.getDate()).padStart(2, '0'),
     ].join('-');
+    const cleanPhone = clientPhone.trim().replace(/\s+/g, '').replace(/^\+57/, '').replace(/^57/, '');
+    const formattedPhone = `+57 ${cleanPhone}`;
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
     const response = await fetch(`${apiUrl}/appointments/public`, {
       method: 'POST',
@@ -114,7 +116,7 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
         date,
         startTime: selectedTime,
         clientName: clientName.trim(),
-        clientPhone: `+57${clientPhone.trim().replace(/\s+/g, '')}`,
+        clientPhone: `+57${cleanPhone}`,
         notes: notes.trim() || undefined,
       }),
     });
@@ -134,6 +136,7 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
       date: dateLabel,
       time: selectedTime,
       service: service.title,
+      phone: formattedPhone,
     });
     setIsSubmitted(true);
     setIsSubmitting(false);
@@ -395,7 +398,7 @@ export function BookingModal({ service, isOpen, onClose, defaultWorkerId }: Prop
             <p
               className={`text-[11px] mb-5 ${isBarber ? 'text-zinc-500' : 'text-stone-400'}`}
             >
-              📱 Te contactaremos al <strong>{clientPhone}</strong> para confirmar.
+              📱 Te contactaremos al <strong>{bookedInfo?.phone || clientPhone}</strong> para confirmar.
             </p>
 
             <button

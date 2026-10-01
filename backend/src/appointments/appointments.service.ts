@@ -2,16 +2,9 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { AppointmentStatus, QueueStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AvailabilityQueryDto, CreatePublicAppointmentDto, JoinQueueDto } from './dto/appointments.dto';
+import { timeToMinutes as toMinutes, minutesToTime as toTime, hasTimeOverlap as overlaps } from '../common/utils/time.util';
 
 type TimeRange = { start: number; end: number };
-
-const toMinutes = (value: string) => {
-  const [hours, minutes] = value.split(':').map(Number);
-  return hours * 60 + minutes;
-};
-
-const toTime = (minutes: number) =>
-  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 
 @Injectable()
 export class AppointmentsService {
@@ -75,15 +68,14 @@ export class AppointmentsService {
         ? { start: toMinutes(schedule.break_start), end: toMinutes(schedule.break_end) }
         : null;
     const occupied: TimeRange[] = appointments.map((a) => ({ start: toMinutes(a.start_time), end: toMinutes(a.end_time) }));
-    const overlaps = (candidate: TimeRange, range: TimeRange) => candidate.start < range.end && candidate.end > range.start;
     const slots: string[] = [];
 
     for (let start = opening; start + duration <= closing; start += 30) {
-      const candidate = { start, end: start + duration };
-      if (
-        (!breakRange || !overlaps(candidate, breakRange)) &&
-        !occupied.some((range) => overlaps(candidate, range))
-      ) {
+      const slotEnd = start + duration;
+      const conflictsWithBreak = breakRange && overlaps(start, slotEnd, breakRange.start, breakRange.end);
+      const conflictsWithOccupied = occupied.some((r) => overlaps(start, slotEnd, r.start, r.end));
+
+      if (!conflictsWithBreak && !conflictsWithOccupied) {
         slots.push(toTime(start));
       }
     }

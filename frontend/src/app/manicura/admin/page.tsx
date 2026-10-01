@@ -3,7 +3,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ManicuraNav } from '@/components/ManicuraNav';
 import { getSupabase } from '@/lib/supabase/client';
 import { canManageBusiness } from '@/lib/access-control';
 import { formatCurrency } from '@/lib/whatsapp';
@@ -14,7 +13,7 @@ import {
   Settings, LogOut, Plus, Clock, Edit2, X, Trash2, ToggleLeft, ToggleRight,
   AlertCircle, RefreshCw, Calendar, Heart, Camera, Upload, ImageIcon,
   AtSign, Phone, MapPin, MessageCircle, Star, Activity, TrendingUp,
-  ChevronDown, ChevronUp, Eye
+  ChevronDown, ChevronUp, Eye, ArrowLeft
 } from 'lucide-react';
 
 export default function ManicuraAdminPage() {
@@ -510,7 +509,77 @@ export default function ManicuraAdminPage() {
   // ══════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen bg-[#0d090d] text-white flex flex-col selection:bg-pink-500 selection:text-white">
-      <ManicuraNav />
+      {/* ─── Header Spa Admin Cohesivo ──────────────────── */}
+      <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#0d090d]/95 border-b border-pink-500/20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-18 flex items-center justify-between gap-3">
+          {/* Lado izquierdo: Volver + Logo + Título */}
+          <div className="flex items-center gap-3">
+            <a
+              href="/manicura"
+              className="p-2 rounded-xl text-pink-300/70 hover:text-white hover:bg-pink-950/50 border border-pink-500/20 transition-colors shrink-0"
+              title="Volver a la página principal de LM Nails"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </a>
+
+            <div className="relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl overflow-hidden ring-2 border-pink-500/40 ring-pink-500/40 shadow-lg shadow-pink-950/60 bg-black shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo_lmnail.jpg"
+                alt="LM Nails Logo"
+                className="w-full h-full object-cover"
+              />
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm sm:text-base font-bold text-white font-serif tracking-tight truncate">
+                  LM Nails <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-rose-400 font-sans font-bold">& Spa</span>
+                </span>
+                <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-widest bg-pink-950 text-pink-300 border border-pink-500/30 uppercase font-mono">
+                  ADMIN SPA
+                </span>
+              </div>
+              <p className="text-[10px] sm:text-[11px] text-pink-300/60 font-mono truncate max-w-[160px] sm:max-w-xs">
+                {userEmail}
+              </p>
+            </div>
+          </div>
+
+          {/* Lado derecho: Acciones rápidas */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => loadBusinessData()}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-pink-950/40 border border-pink-500/30 text-pink-200 hover:text-white text-xs font-medium transition-colors hover:bg-pink-900/40 cursor-pointer"
+              title="Refrescar datos"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden md:inline">Actualizar</span>
+            </button>
+
+            <a
+              href="/manicura"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-pink-950/40 border border-pink-500/30 text-pink-200 hover:text-white text-xs font-medium transition-colors hover:bg-pink-900/40"
+              title="Ver sitio público de LM Nails"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ver Sitio</span>
+            </a>
+
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 hover:text-red-100 text-xs font-medium transition-colors hover:bg-red-900/50 cursor-pointer"
+              title="Cerrar sesión"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Salir</span>
+            </button>
+          </div>
+        </div>
+      </header>
 
       {/* Toast */}
       {toastMessage && (
@@ -527,50 +596,7 @@ export default function ManicuraAdminPage() {
       )}
 
       {/* ─── Main ────────────────────────────────────────── */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-pink-500/20">
-          <div className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo_lmnail.jpg" alt="LM Nails" className="w-12 h-12 rounded-2xl object-cover border-2 border-pink-500/40 shadow-lg shadow-pink-900/30" />
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-bold tracking-tight text-white font-serif">LM Nails & Spa Studio</h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-widest bg-pink-950/80 text-pink-300 border border-pink-500/30 uppercase">Panel Spa</span>
-              </div>
-              <p className="text-[11px] text-pink-300/60 font-mono mt-0.5">
-                Sesión: <span className="text-pink-300">{userEmail}</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => loadBusinessData()}
-              disabled={loading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-pink-950/40 border border-pink-500/30 text-pink-200 hover:text-white text-xs font-medium transition-colors hover:bg-pink-900/40 cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span>Actualizar</span>
-            </button>
-            <a
-              href="/manicura"
-              target="_blank"
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-pink-950/40 border border-pink-500/30 text-pink-200 hover:text-white text-xs font-medium transition-colors hover:bg-pink-900/40"
-            >
-              <Eye className="w-3.5 h-3.5" />
-              <span>Ver Sitio</span>
-            </a>
-            <button
-              onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 hover:text-red-100 text-xs font-medium transition-colors hover:bg-red-900/50 cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Salir</span>
-            </button>
-          </div>
-        </div>
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
 
         {/* Nav Tabs */}
         <div className="flex border-b border-pink-500/20 mt-5 overflow-x-auto pb-0 gap-1 sm:gap-2 scrollbar-none">
@@ -714,74 +740,127 @@ export default function ManicuraAdminPage() {
                 return (
                   <div
                     key={worker.id}
-                    className={`rounded-2xl border transition-all cursor-pointer overflow-hidden ${
+                    onClick={() => setSelectedWorkerForSchedule(worker)}
+                    className={`rounded-2xl border transition-all cursor-pointer p-4 sm:p-5 flex flex-col justify-between ${
                       isSelected
-                        ? 'border-pink-500 shadow-xl shadow-pink-950/50'
-                        : 'border-pink-500/20 hover:border-pink-500/40'
+                        ? 'bg-pink-950/30 border-pink-500 shadow-xl shadow-pink-950/60 ring-1 ring-pink-500/50'
+                        : 'bg-[#150d15]/80 border-pink-500/20 hover:border-pink-500/40 hover:bg-[#180e18]'
                     }`}
                   >
-                    {/* Foto banner */}
-                    <div className="relative h-36 bg-gradient-to-br from-pink-950/80 to-purple-950/60 overflow-hidden">
-                      {worker.avatar_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={worker.avatar_url}
-                          alt={worker.name}
-                          className="w-full h-full object-cover opacity-80"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <span className="text-5xl font-bold text-pink-300/30">{worker.name.charAt(0)}</span>
+                    <div>
+                      {/* Top: Avatar cuadrado natural + Info + Acciones */}
+                      <div className="flex items-start gap-3.5 sm:gap-4">
+                        {/* Avatar cuadrado con marco rosa y punto de estado */}
+                        <div className="relative shrink-0">
+                          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden ring-2 ring-pink-500/40 shadow-lg shadow-pink-950/60 bg-black/60">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={worker.avatar_url || '/logo_lmnail.jpg'}
+                              alt={worker.name}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          {worker.is_active ? (
+                            <span
+                              className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-400 border-2 border-[#150d15] rounded-full shadow-sm"
+                              title="Activa"
+                            />
+                          ) : (
+                            <span
+                              className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-zinc-500 border-2 border-[#150d15] rounded-full"
+                              title="En pausa"
+                            />
+                          )}
                         </div>
+
+                        {/* Nombre & Datos */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-1.5">
+                            <div className="min-w-0">
+                              <h3 className="text-sm sm:text-base font-bold text-white font-serif truncate">
+                                {worker.name}
+                              </h3>
+                              <span className="inline-block text-[10px] text-pink-400 font-semibold uppercase tracking-wider font-mono">
+                                Especialista Nail Artist
+                              </span>
+                            </div>
+
+                            {/* Botones de acción */}
+                            <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={() => handleToggleWorkerActive(worker)}
+                                title={worker.is_active ? 'Pausar especialista' : 'Activar especialista'}
+                                className="p-1 rounded-lg text-pink-300/70 hover:text-white hover:bg-pink-950/50 transition-colors"
+                              >
+                                {worker.is_active ? (
+                                  <ToggleRight className="w-5 h-5 text-emerald-400" />
+                                ) : (
+                                  <ToggleLeft className="w-5 h-5 text-zinc-500" />
+                                )}
+                              </button>
+                              <button
+                                onClick={() => handleOpenWorkerModal(worker)}
+                                title="Editar datos"
+                                className="p-1 rounded-lg text-pink-300/70 hover:text-white hover:bg-pink-950/50 transition-colors"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setDeleteTarget({ type: 'worker', id: worker.id, name: worker.name })}
+                                title="Eliminar"
+                                className="p-1 rounded-lg text-red-400/70 hover:text-red-300 hover:bg-red-950/50 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* WhatsApp / Teléfono */}
+                          <div className="mt-1 flex items-center gap-1.5 text-xs text-pink-200/70 font-mono">
+                            <Phone className="w-3 h-3 text-pink-400 shrink-0" />
+                            <span className="truncate">{worker.phone || 'Sin WhatsApp'}</span>
+                          </div>
+
+                          {/* Badges de Estado & Citas */}
+                          <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-pink-950/60 text-pink-300 border border-pink-500/30">
+                              {worker.accepts_appointments ? '📅 Acepta Citas' : '💅 Solo Presencial'}
+                            </span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+                              worker.is_active
+                                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/30'
+                                : 'bg-zinc-900 text-zinc-400 border-zinc-700'
+                            }`}>
+                              {worker.is_active ? 'Activa' : 'Pausada'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Biografía */}
+                      {worker.bio && (
+                        <p className="mt-3 text-xs text-pink-200/70 italic line-clamp-2 pl-2.5 border-l-2 border-pink-500/40 bg-pink-950/10 py-1 rounded-r">
+                          &quot;{worker.bio}&quot;
+                        </p>
                       )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#150d15] via-transparent to-transparent" />
-
-                      {/* Status badge */}
-                      <div className="absolute top-2 right-2 flex items-center gap-1">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          worker.is_active ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-zinc-800 text-zinc-400'
-                        }`}>
-                          {worker.is_active ? '● Activa' : '○ Pausa'}
-                        </span>
-                      </div>
-
-                      {/* Actions overlay */}
-                      <div className="absolute top-2 left-2 flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                        <button
-                          onClick={() => handleToggleWorkerActive(worker)}
-                          title={worker.is_active ? 'Desactivar' : 'Activar'}
-                          className="p-1.5 rounded-lg bg-black/50 text-pink-300/80 hover:text-white transition-colors"
-                        >
-                          {worker.is_active ? <ToggleRight className="w-4 h-4 text-emerald-400" /> : <ToggleLeft className="w-4 h-4 text-zinc-500" />}
-                        </button>
-                        <button
-                          onClick={() => handleOpenWorkerModal(worker)}
-                          className="p-1.5 rounded-lg bg-black/50 text-pink-300/80 hover:text-white transition-colors"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setDeleteTarget({ type: 'worker', id: worker.id, name: worker.name })}
-                          className="p-1.5 rounded-lg bg-black/50 text-red-400/80 hover:text-red-300 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
                     </div>
 
-                    {/* Info */}
-                    <div className="p-4 bg-[#150d15]/80" onClick={() => setSelectedWorkerForSchedule(worker)}>
-                      <h3 className="text-sm font-bold text-white">{worker.name}</h3>
-                      {worker.bio && <p className="text-xs text-pink-200/60 mt-1 line-clamp-2 italic">"{worker.bio}"</p>}
-                      <div className="mt-3 flex items-center justify-between text-[11px]">
-                        <span className="text-pink-300/50 flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {schedSummary}
-                        </span>
-                        <span className={`text-pink-400 ${isSelected ? 'font-bold' : 'opacity-60'}`}>
-                          {isSelected ? '✓ Horario abierto' : 'Ver horario →'}
-                        </span>
-                      </div>
+                    {/* Bottom: Horario & Seleccionar */}
+                    <div className="mt-4 pt-3 border-t border-pink-500/15 flex items-center justify-between text-xs">
+                      <span className="text-pink-300/60 font-mono flex items-center gap-1 text-[11px]">
+                        <Clock className="w-3 h-3 text-pink-400" />
+                        {schedSummary}
+                      </span>
+                      <button
+                        type="button"
+                        className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-pink-500 text-white shadow-sm'
+                            : 'bg-pink-950/50 text-pink-300 hover:bg-pink-900/60 border border-pink-500/20'
+                        }`}
+                      >
+                        {isSelected ? '✓ Horario Abierto' : 'Configurar Horario →'}
+                      </button>
                     </div>
                   </div>
                 );

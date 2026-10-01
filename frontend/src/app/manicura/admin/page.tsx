@@ -8,11 +8,13 @@ import { getSupabase } from '@/lib/supabase/client';
 import { canManageBusiness } from '@/lib/access-control';
 import { formatCurrency } from '@/lib/whatsapp';
 import { uploadMedia } from '@/lib/media-upload';
-import { Worker, Service, Schedule, DAY_NAMES } from '@/types/database';
+import { Worker, Service, Schedule } from '@/types/database';
 import {
-  Users, UserCheck, CheckCircle2, UserPlus, Phone, Shield, Sparkles,
-  Settings, LogOut, Plus, Clock, Edit2, Save, X, Trash2, ToggleLeft, ToggleRight,
-  DollarSign, Tag, Timer, AlertCircle, Check, RefreshCw, Lock, Calendar, Heart, Camera, Upload
+  CheckCircle2, UserPlus, Shield, Sparkles,
+  Settings, LogOut, Plus, Clock, Edit2, X, Trash2, ToggleLeft, ToggleRight,
+  AlertCircle, RefreshCw, Calendar, Heart, Camera, Upload, ImageIcon,
+  AtSign, Phone, MapPin, MessageCircle, Star, Activity, TrendingUp,
+  ChevronDown, ChevronUp, Eye
 } from 'lucide-react';
 
 export default function ManicuraAdminPage() {
@@ -21,7 +23,7 @@ export default function ManicuraAdminPage() {
 
   const [sessionLoading, setSessionLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'appointments' | 'manicuristas' | 'services' | 'settings'>('manicuristas');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'manicuristas' | 'services' | 'appointments' | 'settings'>('dashboard');
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -51,7 +53,9 @@ export default function ManicuraAdminPage() {
   const [serviceFormPrice, setServiceFormPrice] = useState('');
   const [serviceFormDuration, setServiceFormDuration] = useState('60');
   const [serviceFormDesc, setServiceFormDesc] = useState('');
+  const [serviceFormImageUrl, setServiceFormImageUrl] = useState('');
   const [savingService, setSavingService] = useState(false);
+  const [uploadingServiceImage, setUploadingServiceImage] = useState(false);
 
   // ─── Horarios de la especialista seleccionada ─────────────
   const [selectedWorkerForSchedule, setSelectedWorkerForSchedule] = useState<Worker | null>(null);
@@ -64,13 +68,17 @@ export default function ManicuraAdminPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'worker' | 'service'; id: string; name: string } | null>(null);
   const [deletingItem, setDeletingItem] = useState(false);
 
+  // ─── Appointment filter ──────────────────────────────────
+  const [apptFilter, setApptFilter] = useState<'all' | 'upcoming' | 'past'>('upcoming');
+  const [expandedAppt, setExpandedAppt] = useState<string | null>(null);
+
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToastMessage({ text, type });
     setTimeout(() => { setToastMessage(null); }, 4000);
   };
 
   // ══════════════════════════════════════════════════════════
-  // VERIFICACIÓN ESTRICTA DE ACCESO
+  // AUTH
   // ══════════════════════════════════════════════════════════
   useEffect(() => {
     if (!supabase) {
@@ -114,82 +122,56 @@ export default function ManicuraAdminPage() {
   }, [supabase, router]);
 
   const handleLogout = async () => {
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
+    if (supabase) await supabase.auth.signOut();
     router.replace('/manicura/login');
   };
 
   // ══════════════════════════════════════════════════════════
-  // CARGA DE DATOS DE LM NAILS & SPA STUDIO
+  // CARGA DE DATOS
   // ══════════════════════════════════════════════════════════
   const loadBusinessData = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
 
     try {
-      // 1. Obtener ID de LM Nails
       const { data: bData } = await supabase
         .from('businesses')
         .select('id')
         .eq('slug', 'manicura')
         .maybeSingle();
 
-      const manicuraBizId = bData?.id || '22222222-2222-2222-2222-222222222222';
+      const manicuraBizId = bData?.id || '672e16e5-3605-410c-aa17-9467e3d6c077';
 
-      // 2. Cargar Manicuristas
-      const { data: wData } = await supabase
-        .from('workers')
-        .select('*')
-        .eq('business_id', manicuraBizId)
-        .order('created_at', { ascending: true });
-      
-      const loadedWorkers = wData || [];
+      const [wRes, sRes, apptRes, settsRes] = await Promise.all([
+        supabase.from('workers').select('*').eq('business_id', manicuraBizId).order('created_at', { ascending: true }),
+        supabase.from('services').select('*').eq('business_id', manicuraBizId).order('created_at', { ascending: true }),
+        supabase.from('appointments').select('*, workers(name, avatar_url), services(title, price)').eq('business_id', manicuraBizId).order('start_time', { ascending: true }),
+        supabase.from('business_settings').select('key, value').eq('business_id', manicuraBizId),
+      ]);
+
+      const loadedWorkers = wRes.data || [];
       setWorkers(loadedWorkers);
       if (loadedWorkers.length > 0 && !selectedWorkerForSchedule) {
         setSelectedWorkerForSchedule(loadedWorkers[0]);
       }
 
-      // 3. Cargar Servicios
-      const { data: sData } = await supabase
-        .from('services')
-        .select('*')
-        .eq('business_id', manicuraBizId)
-        .order('created_at', { ascending: true });
-      setServices(sData || []);
+      setServices(sRes.data || []);
+      setAppointments(apptRes.data || []);
 
-      // 4. Cargar Citas
-      const { data: apptData } = await supabase
-        .from('appointments')
-        .select('*, workers(name), services(title, price)')
-        .eq('business_id', manicuraBizId)
-        .order('start_time', { ascending: true })
-        .limit(20);
-      setAppointments(apptData || []);
+      if (settsRes.data) {
+        const sMap: Record<string, string> = {};
+        settsRes.data.forEach(item => { sMap[item.key] = item.value; });
+        setSettings(sMap);
+        setEditSettings(sMap);
+      }
 
-      // 5. Cargar Horarios solo de las manicuristas de este negocio
+      // Horarios
       const workerIds = loadedWorkers.map(w => w.id);
       if (workerIds.length > 0) {
-        const { data: schData } = await supabase
-          .from('schedules')
-          .select('*')
-          .in('worker_id', workerIds);
+        const { data: schData } = await supabase.from('schedules').select('*').in('worker_id', workerIds);
         setSchedules(schData || []);
       } else {
         setSchedules([]);
-      }
-
-      // 6. Cargar Settings
-      const { data: settsData } = await supabase
-        .from('business_settings')
-        .select('key, value')
-        .eq('business_id', manicuraBizId);
-      
-      if (settsData) {
-        const sMap: Record<string, string> = {};
-        settsData.forEach(item => { sMap[item.key] = item.value; });
-        setSettings(sMap);
-        setEditSettings(sMap);
       }
 
     } catch (err: any) {
@@ -201,9 +183,7 @@ export default function ManicuraAdminPage() {
   }, [supabase, selectedWorkerForSchedule]);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      loadBusinessData();
-    }
+    if (isAuthenticated) loadBusinessData();
   }, [isAuthenticated, loadBusinessData]);
 
   // ══════════════════════════════════════════════════════════
@@ -213,7 +193,7 @@ export default function ManicuraAdminPage() {
     if (worker) {
       setEditingWorker(worker);
       setWorkerFormName(worker.name);
-      setWorkerFormPhone(worker.phone || '');
+      setWorkerFormPhone(worker.phone || '+57 ');
       setWorkerFormBio(worker.bio || '');
       setWorkerFormAvatarUrl(worker.avatar_url || '');
       setWorkerFormAcceptsAppts(worker.accepts_appointments);
@@ -231,7 +211,6 @@ export default function ManicuraAdminPage() {
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setUploadingAvatar(true);
     try {
       const publicUrl = await uploadMedia('avatars', file);
@@ -250,46 +229,35 @@ export default function ManicuraAdminPage() {
     setSavingWorker(true);
 
     try {
-      const { data: bData } = await supabase
-        .from('businesses')
-        .select('id')
-        .eq('slug', 'manicura')
-        .maybeSingle();
-      const bizId = bData?.id || '22222222-2222-2222-2222-222222222222';
+      const { data: bData } = await supabase.from('businesses').select('id').eq('slug', 'manicura').maybeSingle();
+      const bizId = bData?.id || '672e16e5-3605-410c-aa17-9467e3d6c077';
 
       if (editingWorker) {
-        const { error } = await supabase
-          .from('workers')
-          .update({
-            name: workerFormName.trim(),
-            phone: workerFormPhone.trim() || null,
-            bio: workerFormBio.trim() || null,
-            avatar_url: workerFormAvatarUrl.trim() || '/logo_lmnail.jpg',
-            accepts_appointments: workerFormAcceptsAppts,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', editingWorker.id);
+        const { error } = await supabase.from('workers').update({
+          name: workerFormName.trim(),
+          phone: workerFormPhone.trim() || null,
+          bio: workerFormBio.trim() || null,
+          avatar_url: workerFormAvatarUrl.trim() || '/logo_lmnail.jpg',
+          accepts_appointments: workerFormAcceptsAppts,
+          updated_at: new Date().toISOString()
+        }).eq('id', editingWorker.id);
 
         if (error) throw error;
         showToast('Especialista actualizada correctamente.');
       } else {
-        const { data: newW, error } = await supabase
-          .from('workers')
-          .insert({
-            business_id: bizId,
-            name: workerFormName.trim(),
-            phone: workerFormPhone.trim() || null,
-            bio: workerFormBio.trim() || null,
-            avatar_url: workerFormAvatarUrl.trim() || '/logo_lmnail.jpg',
-            accepts_appointments: workerFormAcceptsAppts,
-            is_active: true
-          })
-          .select()
-          .single();
+        const { data: newW, error } = await supabase.from('workers').insert({
+          business_id: bizId,
+          business_type: 'manicura',
+          name: workerFormName.trim(),
+          phone: workerFormPhone.trim() || null,
+          bio: workerFormBio.trim() || null,
+          avatar_url: workerFormAvatarUrl.trim() || '/logo_lmnail.jpg',
+          accepts_appointments: workerFormAcceptsAppts,
+          is_active: true
+        }).select().single();
 
         if (error) throw error;
 
-        // Crear horarios por defecto (Lunes a Sábado 9am - 7pm)
         if (newW) {
           const defaultSchedules = [1, 2, 3, 4, 5, 6].map(day => ({
             worker_id: newW.id,
@@ -300,8 +268,7 @@ export default function ManicuraAdminPage() {
           }));
           await supabase.from('schedules').insert(defaultSchedules);
         }
-
-        showToast('Nueva especialista creada con éxito.');
+        showToast('Nueva especialista creada con éxito. 💅');
       }
 
       setShowWorkerModal(false);
@@ -316,11 +283,7 @@ export default function ManicuraAdminPage() {
   const handleToggleWorkerActive = async (worker: Worker) => {
     if (!supabase) return;
     try {
-      const { error } = await supabase
-        .from('workers')
-        .update({ is_active: !worker.is_active })
-        .eq('id', worker.id);
-
+      const { error } = await supabase.from('workers').update({ is_active: !worker.is_active }).eq('id', worker.id);
       if (error) throw error;
       setWorkers(workers.map(w => w.id === worker.id ? { ...w, is_active: !w.is_active } : w));
       showToast(`${worker.name} ${!worker.is_active ? 'activada' : 'desactivada'}.`);
@@ -339,14 +302,31 @@ export default function ManicuraAdminPage() {
       setServiceFormPrice(service.price.toString());
       setServiceFormDuration(service.duration_minutes.toString());
       setServiceFormDesc(service.description || '');
+      setServiceFormImageUrl(service.image_url || '');
     } else {
       setEditingService(null);
       setServiceFormTitle('');
       setServiceFormPrice('');
       setServiceFormDuration('60');
       setServiceFormDesc('');
+      setServiceFormImageUrl('');
     }
     setShowServiceModal(true);
+  };
+
+  const handleServiceImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingServiceImage(true);
+    try {
+      const publicUrl = await uploadMedia('services', file);
+      setServiceFormImageUrl(publicUrl);
+      showToast('Imagen del servicio subida correctamente');
+    } catch (err: any) {
+      showToast(err.message || 'Error al subir imagen', 'error');
+    } finally {
+      setUploadingServiceImage(false);
+    }
   };
 
   const handleSaveService = async (e: React.FormEvent) => {
@@ -355,44 +335,37 @@ export default function ManicuraAdminPage() {
     setSavingService(true);
 
     try {
-      const { data: bData } = await supabase
-        .from('businesses')
-        .select('id')
-        .eq('slug', 'manicura')
-        .maybeSingle();
-      const bizId = bData?.id || '22222222-2222-2222-2222-222222222222';
-
+      const { data: bData } = await supabase.from('businesses').select('id').eq('slug', 'manicura').maybeSingle();
+      const bizId = bData?.id || '672e16e5-3605-410c-aa17-9467e3d6c077';
       const price = parseFloat(serviceFormPrice) || 0;
       const duration = parseInt(serviceFormDuration) || 60;
 
       if (editingService) {
-        const { error } = await supabase
-          .from('services')
-          .update({
-            title: serviceFormTitle.trim(),
-            price,
-            duration_minutes: duration,
-            description: serviceFormDesc.trim() || null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', editingService.id);
+        const { error } = await supabase.from('services').update({
+          title: serviceFormTitle.trim(),
+          price,
+          duration_minutes: duration,
+          description: serviceFormDesc.trim() || null,
+          image_url: serviceFormImageUrl.trim() || null,
+          updated_at: new Date().toISOString()
+        }).eq('id', editingService.id);
 
         if (error) throw error;
         showToast('Servicio actualizado con éxito.');
       } else {
-        const { error } = await supabase
-          .from('services')
-          .insert({
-            business_id: bizId,
-            title: serviceFormTitle.trim(),
-            price,
-            duration_minutes: duration,
-            description: serviceFormDesc.trim() || null,
-            is_active: true
-          });
+        const { error } = await supabase.from('services').insert({
+          business_id: bizId,
+          business_type: 'manicura',
+          title: serviceFormTitle.trim(),
+          price,
+          duration_minutes: duration,
+          description: serviceFormDesc.trim() || null,
+          image_url: serviceFormImageUrl.trim() || null,
+          is_active: true
+        });
 
         if (error) throw error;
-        showToast('Servicio agregado al catálogo de LM Nails.');
+        showToast('Servicio agregado al catálogo de LM Nails. ✨');
       }
 
       setShowServiceModal(false);
@@ -407,11 +380,7 @@ export default function ManicuraAdminPage() {
   const handleToggleServiceActive = async (service: Service) => {
     if (!supabase) return;
     try {
-      const { error } = await supabase
-        .from('services')
-        .update({ is_active: !service.is_active })
-        .eq('id', service.id);
-
+      const { error } = await supabase.from('services').update({ is_active: !service.is_active }).eq('id', service.id);
       if (error) throw error;
       setServices(services.map(s => s.id === service.id ? { ...s, is_active: !s.is_active } : s));
       showToast(`Servicio ${!service.is_active ? 'activado' : 'pausado'}.`);
@@ -426,21 +395,17 @@ export default function ManicuraAdminPage() {
   const handleConfirmDelete = async () => {
     if (!supabase || !deleteTarget) return;
     setDeletingItem(true);
-
     try {
       if (deleteTarget.type === 'worker') {
         const { error } = await supabase.from('workers').delete().eq('id', deleteTarget.id);
         if (error) throw error;
         showToast(`Especialista ${deleteTarget.name} eliminada.`);
-        if (selectedWorkerForSchedule?.id === deleteTarget.id) {
-          setSelectedWorkerForSchedule(null);
-        }
-      } else if (deleteTarget.type === 'service') {
+        if (selectedWorkerForSchedule?.id === deleteTarget.id) setSelectedWorkerForSchedule(null);
+      } else {
         const { error } = await supabase.from('services').delete().eq('id', deleteTarget.id);
         if (error) throw error;
         showToast(`Servicio ${deleteTarget.name} eliminado.`);
       }
-
       setDeleteTarget(null);
       loadBusinessData();
     } catch (err: any) {
@@ -451,26 +416,15 @@ export default function ManicuraAdminPage() {
   };
 
   // ══════════════════════════════════════════════════════════
-  // GESTIÓN DE HORARIOS DE TRABAJADOR
+  // HORARIOS
   // ══════════════════════════════════════════════════════════
-  const handleUpdateScheduleDay = async (
-    dayOfWeek: number,
-    field: 'is_active' | 'start_time' | 'end_time',
-    value: any
-  ) => {
+  const handleUpdateScheduleDay = async (dayOfWeek: number, field: 'is_active' | 'start_time' | 'end_time', value: any) => {
     if (!supabase || !selectedWorkerForSchedule) return;
-
     try {
-      const existing = schedules.find(
-        s => s.worker_id === selectedWorkerForSchedule.id && s.day_of_week === dayOfWeek
-      );
+      const existing = schedules.find(s => s.worker_id === selectedWorkerForSchedule.id && s.day_of_week === dayOfWeek);
 
       if (existing) {
-        const { error } = await supabase
-          .from('schedules')
-          .update({ [field]: value })
-          .eq('id', existing.id);
-
+        const { error } = await supabase.from('schedules').update({ [field]: value }).eq('id', existing.id);
         if (error) throw error;
         setSchedules(schedules.map(s => s.id === existing.id ? { ...s, [field]: value } : s));
       } else {
@@ -482,12 +436,7 @@ export default function ManicuraAdminPage() {
           is_active: field === 'is_active' ? value : true,
           [field]: value
         };
-        const { data, error } = await supabase
-          .from('schedules')
-          .insert(newSched)
-          .select()
-          .single();
-
+        const { data, error } = await supabase.from('schedules').insert(newSched).select().single();
         if (error) throw error;
         if (data) setSchedules([...schedules, data]);
       }
@@ -498,33 +447,21 @@ export default function ManicuraAdminPage() {
   };
 
   // ══════════════════════════════════════════════════════════
-  // CONFIGURACIONES DEL NEGOCIO
+  // CONFIGURACIÓN
   // ══════════════════════════════════════════════════════════
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supabase) return;
     setSavingSettings(true);
-
     try {
-      const { data: bData } = await supabase
-        .from('businesses')
-        .select('id')
-        .eq('slug', 'manicura')
-        .maybeSingle();
-      const bizId = bData?.id || '22222222-2222-2222-2222-222222222222';
-
+      const { data: bData } = await supabase.from('businesses').select('id').eq('slug', 'manicura').maybeSingle();
+      const bizId = bData?.id || '672e16e5-3605-410c-aa17-9467e3d6c077';
       const entries = Object.entries(editSettings);
       for (const [key, value] of entries) {
-        await supabase
-          .from('business_settings')
-          .upsert(
-            { business_id: bizId, key, value },
-            { onConflict: 'business_id,key' }
-          );
+        await supabase.from('business_settings').upsert({ business_id: bizId, key, value }, { onConflict: 'business_id,key' });
       }
-
       setSettings(editSettings);
-      showToast('Configuraciones de LM Nails guardadas.');
+      showToast('Configuraciones de LM Nails guardadas. ✨');
     } catch (err: any) {
       showToast('Error al guardar configuraciones.', 'error');
     } finally {
@@ -532,12 +469,35 @@ export default function ManicuraAdminPage() {
     }
   };
 
+  // ─── Helpers ────────────────────────────────────────────
+  const now = new Date();
+  const upcomingAppts = appointments.filter(a => new Date(a.start_time) >= now);
+  const pastAppts = appointments.filter(a => new Date(a.start_time) < now);
+  const filteredAppts = apptFilter === 'all' ? appointments : apptFilter === 'upcoming' ? upcomingAppts : pastAppts;
+  const activeWorkers = workers.filter(w => w.is_active);
+  const activeServices = services.filter(s => s.is_active);
+
+  const getWorkerScheduleSummary = (workerId: string) => {
+    const ws = schedules.filter(s => s.worker_id === workerId && s.is_active);
+    if (ws.length === 0) return 'Sin horario';
+    return `${ws.length} días/semana`;
+  };
+
+  const getApptStatusColor = (status: string) => {
+    const s = (status || '').toLowerCase();
+    if (s.includes('confirm') || s.includes('pendiente')) return 'bg-amber-900/60 text-amber-300 border-amber-500/30';
+    if (s.includes('complet') || s.includes('atendi')) return 'bg-emerald-900/60 text-emerald-300 border-emerald-500/30';
+    if (s.includes('cancel')) return 'bg-red-900/60 text-red-300 border-red-500/30';
+    return 'bg-pink-900/60 text-pink-300 border-pink-500/30';
+  };
+
+  // ── Loading / Auth ─────────────────────────────────────
   if (sessionLoading) {
     return (
       <div className="min-h-screen bg-[#0d090d] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-2 border-pink-500/30 border-t-pink-500 rounded-full animate-spin" />
-          <p className="text-pink-200/60 text-sm tracking-widest uppercase">Verificando Credenciales de LM Nails...</p>
+          <p className="text-pink-200/60 text-sm tracking-widest uppercase">Verificando acceso…</p>
         </div>
       </div>
     );
@@ -545,285 +505,336 @@ export default function ManicuraAdminPage() {
 
   if (!isAuthenticated) return null;
 
+  // ══════════════════════════════════════════════════════════
+  // RENDER
+  // ══════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen bg-[#0d090d] text-white flex flex-col selection:bg-pink-500 selection:text-white">
       <ManicuraNav />
 
-      {/* Toast Notification */}
+      {/* Toast */}
       {toastMessage && (
-        <div
-          className={`fixed top-20 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl backdrop-blur-md border text-xs font-semibold tracking-wide animate-fade-in ${
-            toastMessage.type === 'success'
-              ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-200'
-              : 'bg-red-950/90 border-red-500/40 text-red-200'
-          }`}
-        >
-          {toastMessage.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          ) : (
-            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-          )}
+        <div className={`fixed top-20 right-4 z-[60] flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl backdrop-blur-md border text-xs font-semibold tracking-wide max-w-xs ${
+          toastMessage.type === 'success'
+            ? 'bg-emerald-950/95 border-emerald-500/40 text-emerald-200'
+            : 'bg-red-950/95 border-red-500/40 text-red-200'
+        }`}>
+          {toastMessage.type === 'success'
+            ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            : <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />}
           <span>{toastMessage.text}</span>
         </div>
       )}
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        {/* Top Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-pink-500/20">
-          <div className="flex items-center gap-4">
+      {/* ─── Main ────────────────────────────────────────── */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-pink-500/20">
+          <div className="flex items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo_lmnail.jpg"
-              alt="LM Nails Logo"
-              className="w-14 h-14 rounded-full object-cover border-2 border-pink-500/50 shadow-lg shadow-pink-900/20"
-            />
+            <img src="/logo_lmnail.jpg" alt="LM Nails" className="w-12 h-12 rounded-2xl object-cover border-2 border-pink-500/40 shadow-lg shadow-pink-900/30" />
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold tracking-tight text-white font-serif">
-                  LM Nails & Spa Studio
-                </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-widest bg-pink-950/80 text-pink-300 border border-pink-500/30 uppercase">
-                  Panel Spa
-                </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-xl font-bold tracking-tight text-white font-serif">LM Nails & Spa Studio</h1>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-widest bg-pink-950/80 text-pink-300 border border-pink-500/30 uppercase">Panel Spa</span>
               </div>
-              <p className="text-xs text-pink-300/60 font-mono mt-0.5">
-                Sesión: <span className="text-pink-300 font-semibold">{userEmail}</span>
+              <p className="text-[11px] text-pink-300/60 font-mono mt-0.5">
+                Sesión: <span className="text-pink-300">{userEmail}</span>
               </p>
             </div>
           </div>
 
-          {/* Quick Actions */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => loadBusinessData()}
               disabled={loading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-pink-950/40 border border-pink-500/30 text-pink-200 hover:text-white text-xs font-medium transition-colors hover:bg-pink-900/40"
-              title="Refrescar datos"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-pink-950/40 border border-pink-500/30 text-pink-200 hover:text-white text-xs font-medium transition-colors hover:bg-pink-900/40 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Actualizar</span>
+              <span>Actualizar</span>
             </button>
+            <a
+              href="/manicura"
+              target="_blank"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-pink-950/40 border border-pink-500/30 text-pink-200 hover:text-white text-xs font-medium transition-colors hover:bg-pink-900/40"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Ver Sitio</span>
+            </a>
             <button
               onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 hover:text-red-100 text-xs font-medium transition-colors hover:bg-red-900/50"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 hover:text-red-100 text-xs font-medium transition-colors hover:bg-red-900/50 cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span>Cerrar Sesión</span>
+              <span>Salir</span>
             </button>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex border-b border-pink-500/20 mt-6 gap-2 sm:gap-6 overflow-x-auto pb-1">
-          <button
-            onClick={() => setActiveTab('manicuristas')}
-            className={`flex items-center gap-2 py-3 px-3 sm:px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all shrink-0 cursor-pointer ${
-              activeTab === 'manicuristas'
-                ? 'border-pink-500 text-pink-300 bg-pink-950/30 rounded-t-lg'
-                : 'border-transparent text-pink-200/50 hover:text-pink-200'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>Manicuristas ({workers.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('services')}
-            className={`flex items-center gap-2 py-3 px-3 sm:px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all shrink-0 cursor-pointer ${
-              activeTab === 'services'
-                ? 'border-pink-500 text-pink-300 bg-pink-950/30 rounded-t-lg'
-                : 'border-transparent text-pink-200/50 hover:text-pink-200'
-            }`}
-          >
-            <Heart className="w-4 h-4" />
-            <span>Servicios & Spa ({services.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('appointments')}
-            className={`flex items-center gap-2 py-3 px-3 sm:px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all shrink-0 cursor-pointer ${
-              activeTab === 'appointments'
-                ? 'border-pink-500 text-pink-300 bg-pink-950/30 rounded-t-lg'
-                : 'border-transparent text-pink-200/50 hover:text-pink-200'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            <span>Citas Agendadas ({appointments.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('settings')}
-            className={`flex items-center gap-2 py-3 px-3 sm:px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all shrink-0 cursor-pointer ${
-              activeTab === 'settings'
-                ? 'border-pink-500 text-pink-300 bg-pink-950/30 rounded-t-lg'
-                : 'border-transparent text-pink-200/50 hover:text-pink-200'
-            }`}
-          >
-            <Settings className="w-4 h-4" />
-            <span>Configuración LM Nails</span>
-          </button>
+        {/* Nav Tabs */}
+        <div className="flex border-b border-pink-500/20 mt-5 overflow-x-auto pb-0 gap-1 sm:gap-2 scrollbar-none">
+          {([
+            { key: 'dashboard', icon: <Activity className="w-4 h-4" />, label: 'Resumen' },
+            { key: 'manicuristas', icon: <Sparkles className="w-4 h-4" />, label: `Especialistas (${workers.length})` },
+            { key: 'services', icon: <Heart className="w-4 h-4" />, label: `Servicios (${services.length})` },
+            { key: 'appointments', icon: <Calendar className="w-4 h-4" />, label: `Citas (${upcomingAppts.length})` },
+            { key: 'settings', icon: <Settings className="w-4 h-4" />, label: 'Configuración' },
+          ] as const).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex items-center gap-1.5 py-2.5 px-2.5 sm:px-3.5 text-[11px] font-bold uppercase tracking-wider border-b-2 transition-all shrink-0 cursor-pointer whitespace-nowrap ${
+                activeTab === tab.key
+                  ? 'border-pink-500 text-pink-300 bg-pink-950/30 rounded-t-lg'
+                  : 'border-transparent text-pink-200/50 hover:text-pink-200'
+              }`}
+            >
+              {tab.icon}
+              <span className="hidden sm:inline">{tab.label}</span>
+            </button>
+          ))}
         </div>
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* TAB 1: MANICURISTAS & HORARIOS                         */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* ════════════════════════════════════════════ */}
+        {/* TAB: DASHBOARD                               */}
+        {/* ════════════════════════════════════════════ */}
+        {activeTab === 'dashboard' && (
+          <div className="mt-6 space-y-6">
+            {/* Stat Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: 'Especialistas', value: workers.length, active: activeWorkers.length, icon: <Sparkles className="w-5 h-5 text-pink-400" />, color: 'pink' },
+                { label: 'Servicios', value: services.length, active: activeServices.length, icon: <Heart className="w-5 h-5 text-rose-400" />, color: 'rose' },
+                { label: 'Citas Próximas', value: upcomingAppts.length, active: null, icon: <Calendar className="w-5 h-5 text-purple-400" />, color: 'purple' },
+                { label: 'Total Citas', value: appointments.length, active: null, icon: <TrendingUp className="w-5 h-5 text-amber-400" />, color: 'amber' },
+              ].map((stat, i) => (
+                <div key={i} className="p-4 rounded-2xl bg-[#150d15]/60 border border-pink-500/20 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    {stat.icon}
+                    {stat.active !== null && (
+                      <span className="text-[10px] text-emerald-400 font-semibold">{stat.active} activas</span>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-white">{loading ? '—' : stat.value}</p>
+                    <p className="text-[11px] text-pink-300/60 mt-0.5">{stat.label}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Próximas citas */}
+            <div className="p-5 rounded-2xl bg-[#150d15]/60 border border-pink-500/20">
+              <h2 className="text-sm font-bold text-white font-serif mb-4 flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-pink-400" />
+                Próximas Citas
+              </h2>
+              {upcomingAppts.length === 0 ? (
+                <p className="text-xs text-pink-300/50 text-center py-6">No hay citas próximas</p>
+              ) : (
+                <div className="space-y-2">
+                  {upcomingAppts.slice(0, 5).map(appt => (
+                    <div key={appt.id} className="flex items-center gap-3 p-3 rounded-xl bg-pink-950/20 border border-pink-500/10">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-pink-500/30 to-purple-600/30 flex items-center justify-center text-sm font-bold text-pink-200 shrink-0">
+                        {appt.client_name?.charAt(0) || '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-white truncate">{appt.client_name}</p>
+                        <p className="text-[11px] text-pink-300/60 truncate">{appt.services?.title || 'Servicio'} · {appt.workers?.name || 'Cualquiera'}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-[11px] font-mono text-pink-200/70">
+                          {new Date(appt.start_time).toLocaleDateString('es-CO', { month: 'short', day: 'numeric' })}
+                        </p>
+                        <p className="text-[10px] font-mono text-pink-300/50">
+                          {new Date(appt.start_time).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {upcomingAppts.length > 5 && (
+                    <button
+                      onClick={() => setActiveTab('appointments')}
+                      className="w-full text-center text-xs text-pink-400 hover:text-pink-300 py-2 cursor-pointer"
+                    >
+                      Ver todas las citas →
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Quick links */}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setActiveTab('manicuristas')}
+                className="p-4 rounded-2xl bg-gradient-to-br from-pink-950/60 to-purple-950/40 border border-pink-500/20 text-left hover:border-pink-500/40 transition-all cursor-pointer"
+              >
+                <Sparkles className="w-5 h-5 text-pink-400 mb-2" />
+                <p className="text-sm font-bold text-white">Gestionar Equipo</p>
+                <p className="text-[11px] text-pink-300/60">{activeWorkers.length} especialistas activas</p>
+              </button>
+              <button
+                onClick={() => setActiveTab('services')}
+                className="p-4 rounded-2xl bg-gradient-to-br from-rose-950/60 to-pink-950/40 border border-rose-500/20 text-left hover:border-rose-500/40 transition-all cursor-pointer"
+              >
+                <Heart className="w-5 h-5 text-rose-400 mb-2" />
+                <p className="text-sm font-bold text-white">Catálogo Servicios</p>
+                <p className="text-[11px] text-pink-300/60">{activeServices.length} servicios activos</p>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ════════════════════════════════════════════ */}
+        {/* TAB: MANICURISTAS                           */}
+        {/* ════════════════════════════════════════════ */}
         {activeTab === 'manicuristas' && (
           <div className="mt-6 space-y-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-white font-serif">Equipo de Manicuristas & Estilistas</h2>
-                <p className="text-xs text-pink-300/60">
-                  Administra las profesionales de LM Nails y sus horarios de atención.
-                </p>
+                <h2 className="text-lg font-bold text-white font-serif">Equipo de Especialistas</h2>
+                <p className="text-xs text-pink-300/60">Administra el equipo de LM Nails y sus horarios.</p>
               </div>
               <button
                 onClick={() => handleOpenWorkerModal()}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold uppercase tracking-wider transition-all shadow-lg shadow-pink-900/30 border border-pink-400/30 cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
-                <span>Agregar Manicurista</span>
+                <UserPlus className="w-4 h-4" />
+                <span>Nueva Especialista</span>
               </button>
             </div>
 
-            {/* Listado de Manicuristas */}
+            {/* Grid de trabajadoras */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {workers.map((worker) => {
                 const isSelected = selectedWorkerForSchedule?.id === worker.id;
+                const schedSummary = getWorkerScheduleSummary(worker.id);
                 return (
                   <div
                     key={worker.id}
-                    onClick={() => setSelectedWorkerForSchedule(worker)}
-                    className={`p-5 rounded-2xl border transition-all cursor-pointer relative ${
+                    className={`rounded-2xl border transition-all cursor-pointer overflow-hidden ${
                       isSelected
-                        ? 'bg-pink-950/30 border-pink-500 shadow-xl shadow-pink-950/50'
-                        : 'bg-[#150d15]/60 border-pink-500/20 hover:border-pink-500/40 hover:bg-[#180e18]'
+                        ? 'border-pink-500 shadow-xl shadow-pink-950/50'
+                        : 'border-pink-500/20 hover:border-pink-500/40'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-500/20 to-purple-600/20 border border-pink-500/30 flex items-center justify-center font-bold text-pink-300 text-sm">
-                          {worker.name.charAt(0)}
+                    {/* Foto banner */}
+                    <div className="relative h-36 bg-gradient-to-br from-pink-950/80 to-purple-950/60 overflow-hidden">
+                      {worker.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={worker.avatar_url}
+                          alt={worker.name}
+                          className="w-full h-full object-cover opacity-80"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <span className="text-5xl font-bold text-pink-300/30">{worker.name.charAt(0)}</span>
                         </div>
-                        <div>
-                          <h3 className="text-sm font-bold text-white">{worker.name}</h3>
-                          <p className="text-xs text-pink-300/70 font-mono mt-0.5">
-                            {worker.phone || 'Sin WhatsApp'}
-                          </p>
-                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#150d15] via-transparent to-transparent" />
+
+                      {/* Status badge */}
+                      <div className="absolute top-2 right-2 flex items-center gap-1">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          worker.is_active ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-zinc-800 text-zinc-400'
+                        }`}>
+                          {worker.is_active ? '● Activa' : '○ Pausa'}
+                        </span>
                       </div>
 
-                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      {/* Actions overlay */}
+                      <div className="absolute top-2 left-2 flex items-center gap-1" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => handleToggleWorkerActive(worker)}
                           title={worker.is_active ? 'Desactivar' : 'Activar'}
-                          className="text-pink-300/60 hover:text-pink-200 p-1"
+                          className="p-1.5 rounded-lg bg-black/50 text-pink-300/80 hover:text-white transition-colors"
                         >
-                          {worker.is_active ? (
-                            <ToggleRight className="w-5 h-5 text-emerald-400" />
-                          ) : (
-                            <ToggleLeft className="w-5 h-5 text-zinc-500" />
-                          )}
+                          {worker.is_active ? <ToggleRight className="w-4 h-4 text-emerald-400" /> : <ToggleLeft className="w-4 h-4 text-zinc-500" />}
                         </button>
                         <button
                           onClick={() => handleOpenWorkerModal(worker)}
-                          title="Editar"
-                          className="text-pink-300/60 hover:text-pink-200 p-1"
+                          className="p-1.5 rounded-lg bg-black/50 text-pink-300/80 hover:text-white transition-colors"
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => setDeleteTarget({ type: 'worker', id: worker.id, name: worker.name })}
-                          title="Eliminar"
-                          className="text-red-400/60 hover:text-red-300 p-1"
+                          className="p-1.5 rounded-lg bg-black/50 text-red-400/80 hover:text-red-300 transition-colors"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
 
-                    {worker.bio && (
-                      <p className="mt-3 text-xs text-pink-200/60 line-clamp-2 italic">
-                        &quot;{worker.bio}&quot;
-                      </p>
-                    )}
-
-                    <div className="mt-4 pt-3 border-t border-pink-500/10 flex items-center justify-between text-[11px]">
-                      <span className={`px-2 py-0.5 rounded-full font-semibold ${
-                        worker.is_active ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30' : 'bg-zinc-900 text-zinc-400'
-                      }`}>
-                        {worker.is_active ? '● En Servicio' : '○ En Pausa'}
-                      </span>
-                      <span className="text-pink-300/50 font-medium">
-                        {isSelected ? '✓ Horarios visibles abajo' : 'Clic para ver horarios'}
-                      </span>
+                    {/* Info */}
+                    <div className="p-4 bg-[#150d15]/80" onClick={() => setSelectedWorkerForSchedule(worker)}>
+                      <h3 className="text-sm font-bold text-white">{worker.name}</h3>
+                      {worker.bio && <p className="text-xs text-pink-200/60 mt-1 line-clamp-2 italic">"{worker.bio}"</p>}
+                      <div className="mt-3 flex items-center justify-between text-[11px]">
+                        <span className="text-pink-300/50 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {schedSummary}
+                        </span>
+                        <span className={`text-pink-400 ${isSelected ? 'font-bold' : 'opacity-60'}`}>
+                          {isSelected ? '✓ Horario abierto' : 'Ver horario →'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Editor de Horarios de la Especialista Seleccionada */}
+            {/* Editor horarios */}
             {selectedWorkerForSchedule && (
-              <div className="p-6 rounded-2xl bg-[#150d15]/80 border border-pink-500/20 mt-8">
-                <div className="flex items-center justify-between pb-4 mb-4 border-b border-pink-500/15">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-pink-400" />
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                      Horarios Semanales: <span className="text-pink-400">{selectedWorkerForSchedule.name}</span>
-                    </h3>
-                  </div>
+              <div className="p-5 rounded-2xl bg-[#150d15]/80 border border-pink-500/20">
+                <div className="flex items-center gap-2 pb-4 mb-4 border-b border-pink-500/15">
+                  <Clock className="w-4 h-4 text-pink-400" />
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                    Horarios: <span className="text-pink-400">{selectedWorkerForSchedule.name}</span>
+                  </h3>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
                   {[1, 2, 3, 4, 5, 6, 0].map((day) => {
-                    const daySched = schedules.find(
-                      s => s.worker_id === selectedWorkerForSchedule.id && s.day_of_week === day
-                    );
-                    const isWorking = daySched ? daySched.is_active : false;
-                    const startTime = daySched ? daySched.start_time : '09:00';
-                    const endTime = daySched ? daySched.end_time : '19:00';
+                    const daySched = schedules.find(s => s.worker_id === selectedWorkerForSchedule.id && s.day_of_week === day);
+                    const isWorking = daySched?.is_active ?? false;
+                    const startTime = daySched?.start_time ?? '09:00';
+                    const endTime = daySched?.end_time ?? '19:00';
+                    const dayNames = { 0: 'Dom', 1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb' };
 
                     return (
                       <div
                         key={day}
-                        className={`p-3.5 rounded-xl border transition-all ${
-                          isWorking
-                            ? 'bg-pink-950/20 border-pink-500/30'
-                            : 'bg-black/30 border-zinc-800 opacity-60'
+                        className={`p-3 rounded-xl border transition-all ${
+                          isWorking ? 'bg-pink-950/20 border-pink-500/30' : 'bg-black/30 border-zinc-800 opacity-60'
                         }`}
                       >
-                        <div className="flex items-center justify-between mb-2.5">
-                          <span className="text-xs font-bold text-white">
-                            {DAY_NAMES[day]}
-                          </span>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold text-white">{dayNames[day]}</span>
                           <button
                             onClick={() => handleUpdateScheduleDay(day, 'is_active', !isWorking)}
-                            className="text-xs font-semibold cursor-pointer"
+                            className="text-[10px] font-semibold cursor-pointer"
                           >
-                            {isWorking ? (
-                              <span className="text-emerald-400">Laborable</span>
-                            ) : (
-                              <span className="text-zinc-500">Descanso</span>
-                            )}
+                            {isWorking ? <span className="text-emerald-400">✓</span> : <span className="text-zinc-500">✗</span>}
                           </button>
                         </div>
-
                         {isWorking && (
-                          <div className="flex items-center gap-2 text-xs">
+                          <div className="space-y-1.5">
                             <input
                               type="time"
                               value={startTime}
-                              onChange={(e) => handleUpdateScheduleDay(day, 'start_time', e.target.value)}
-                              className="w-full bg-black/50 border border-pink-500/20 rounded px-2 py-1 text-white text-[11px]"
+                              onChange={e => handleUpdateScheduleDay(day, 'start_time', e.target.value)}
+                              className="w-full bg-black/50 border border-pink-500/20 rounded px-1.5 py-1 text-white text-[10px] focus:outline-none"
                             />
-                            <span className="text-pink-400/50">-</span>
                             <input
                               type="time"
                               value={endTime}
-                              onChange={(e) => handleUpdateScheduleDay(day, 'end_time', e.target.value)}
-                              className="w-full bg-black/50 border border-pink-500/20 rounded px-2 py-1 text-white text-[11px]"
+                              onChange={e => handleUpdateScheduleDay(day, 'end_time', e.target.value)}
+                              className="w-full bg-black/50 border border-pink-500/20 rounded px-1.5 py-1 text-white text-[10px] focus:outline-none"
                             />
                           </div>
                         )}
@@ -836,17 +847,15 @@ export default function ManicuraAdminPage() {
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* TAB 2: SERVICIOS & SPA                                 */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* ════════════════════════════════════════════ */}
+        {/* TAB: SERVICIOS                              */}
+        {/* ════════════════════════════════════════════ */}
         {activeTab === 'services' && (
           <div className="mt-6 space-y-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-white font-serif">Catálogo de Servicios & Spa</h2>
-                <p className="text-xs text-pink-300/60">
-                  Define precios, duraciones en minutos y detalles de cada tratamiento.
-                </p>
+                <p className="text-xs text-pink-300/60">Define precios, duraciones y fotos de cada tratamiento.</p>
               </div>
               <button
                 onClick={() => handleOpenServiceModal()}
@@ -857,57 +866,60 @@ export default function ManicuraAdminPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {services.map((svc) => (
-                <div
-                  key={svc.id}
-                  className="p-5 rounded-2xl bg-[#150d15]/60 border border-pink-500/20 hover:border-pink-500/40 transition-all flex flex-col justify-between"
-                >
-                  <div>
+                <div key={svc.id} className="rounded-2xl border border-pink-500/20 bg-[#150d15]/60 overflow-hidden hover:border-pink-500/40 transition-all flex flex-col">
+                  {/* Imagen del servicio */}
+                  <div className="relative h-40 bg-gradient-to-br from-pink-950/60 to-purple-950/40 overflow-hidden">
+                    {svc.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={svc.image_url} alt={svc.title} className="w-full h-full object-cover opacity-90" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <ImageIcon className="w-10 h-10 text-pink-500/20" />
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#150d15] via-transparent to-transparent" />
+                    {/* Toggle activo */}
+                    <div className="absolute top-2 right-2">
+                      <button
+                        onClick={() => handleToggleServiceActive(svc)}
+                        className="p-1.5 rounded-lg bg-black/60 border border-pink-500/20"
+                      >
+                        {svc.is_active ? <ToggleRight className="w-4 h-4 text-emerald-400" /> : <ToggleLeft className="w-4 h-4 text-zinc-500" />}
+                      </button>
+                    </div>
+                    {!svc.is_active && (
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                        <span className="px-2 py-1 rounded text-xs font-bold bg-zinc-900/90 text-zinc-400 border border-zinc-700">PAUSADO</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 flex flex-col flex-1">
                     <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-sm font-bold text-white">{svc.title}</h3>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleToggleServiceActive(svc)}
-                          title={svc.is_active ? 'Desactivar' : 'Activar'}
-                          className="text-pink-300/60 hover:text-pink-200 p-1"
-                        >
-                          {svc.is_active ? (
-                            <ToggleRight className="w-5 h-5 text-emerald-400" />
-                          ) : (
-                            <ToggleLeft className="w-5 h-5 text-zinc-500" />
-                          )}
+                      <h3 className="text-sm font-bold text-white leading-tight">{svc.title}</h3>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => handleOpenServiceModal(svc)} className="p-1 text-pink-300/60 hover:text-pink-200">
+                          <Edit2 className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => handleOpenServiceModal(svc)}
-                          className="text-pink-300/60 hover:text-pink-200 p-1"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => setDeleteTarget({ type: 'service', id: svc.id, name: svc.title })}
-                          className="text-red-400/60 hover:text-red-300 p-1"
-                        >
-                          <Trash2 className="w-4 h-4" />
+                        <button onClick={() => setDeleteTarget({ type: 'service', id: svc.id, name: svc.title })} className="p-1 text-red-400/60 hover:text-red-300">
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
 
                     {svc.description && (
-                      <p className="mt-2 text-xs text-pink-200/60 line-clamp-2">
-                        {svc.description}
-                      </p>
+                      <p className="mt-1.5 text-xs text-pink-200/60 line-clamp-2 flex-1">{svc.description}</p>
                     )}
-                  </div>
 
-                  <div className="mt-4 pt-3 border-t border-pink-500/10 flex items-center justify-between text-xs">
-                    <span className="font-bold text-pink-300 text-sm">
-                      {formatCurrency(svc.price)}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-pink-200/70 font-mono">
-                      <Clock className="w-3.5 h-3.5 text-pink-400" />
-                      {svc.duration_minutes} min
-                    </span>
+                    <div className="mt-3 pt-3 border-t border-pink-500/10 flex items-center justify-between">
+                      <span className="font-bold text-pink-300 text-sm">{formatCurrency(svc.price)}</span>
+                      <span className="inline-flex items-center gap-1 text-xs text-pink-200/60 font-mono">
+                        <Clock className="w-3.5 h-3.5 text-pink-400" />
+                        {svc.duration_minutes} min
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -915,108 +927,235 @@ export default function ManicuraAdminPage() {
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* TAB 3: CITAS AGENDADAS                                 */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* ════════════════════════════════════════════ */}
+        {/* TAB: CITAS                                  */}
+        {/* ════════════════════════════════════════════ */}
         {activeTab === 'appointments' && (
-          <div className="mt-6 space-y-6">
+          <div className="mt-6 space-y-5">
             <div>
               <h2 className="text-lg font-bold text-white font-serif">Citas Agendadas</h2>
-              <p className="text-xs text-pink-300/60">
-                Historial y próximas reservaciones de clientas en LM Nails & Spa Studio.
-              </p>
+              <p className="text-xs text-pink-300/60">Historial y próximas reservaciones en LM Nails & Spa Studio.</p>
             </div>
 
-            {appointments.length === 0 ? (
+            {/* Filter pills */}
+            <div className="flex gap-2 flex-wrap">
+              {([
+                { key: 'upcoming', label: `Próximas (${upcomingAppts.length})` },
+                { key: 'past', label: `Pasadas (${pastAppts.length})` },
+                { key: 'all', label: `Todas (${appointments.length})` },
+              ] as const).map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setApptFilter(f.key)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
+                    apptFilter === f.key
+                      ? 'bg-pink-600 border-pink-500 text-white'
+                      : 'bg-pink-950/30 border-pink-500/20 text-pink-300/70 hover:text-pink-200'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {filteredAppts.length === 0 ? (
               <div className="text-center py-16 px-4 bg-[#150d15]/40 rounded-2xl border border-pink-500/15">
-                <Calendar className="w-10 h-10 text-pink-500/40 mx-auto mb-3" />
-                <h3 className="text-sm font-bold text-white">No hay citas registradas aún</h3>
-                <p className="text-xs text-pink-300/50 mt-1 max-w-sm mx-auto">
-                  Las citas agendadas desde la landing de LM Nails aparecerán listadas aquí con todos los detalles.
-                </p>
+                <Calendar className="w-10 h-10 text-pink-500/30 mx-auto mb-3" />
+                <h3 className="text-sm font-bold text-white">No hay citas en esta categoría</h3>
+                <p className="text-xs text-pink-300/50 mt-1">Las citas aparecerán aquí cuando se agenden desde el sitio.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-2xl border border-pink-500/20 bg-[#150d15]/60">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-pink-950/40 text-pink-200 border-b border-pink-500/20">
-                    <tr>
-                      <th className="p-3.5 font-bold uppercase tracking-wider">Clienta</th>
-                      <th className="p-3.5 font-bold uppercase tracking-wider">Especialista</th>
-                      <th className="p-3.5 font-bold uppercase tracking-wider">Servicio</th>
-                      <th className="p-3.5 font-bold uppercase tracking-wider">Fecha & Hora</th>
-                      <th className="p-3.5 font-bold uppercase tracking-wider">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-pink-500/10 text-pink-200/80">
-                    {appointments.map((appt) => (
-                      <tr key={appt.id} className="hover:bg-pink-950/20">
-                        <td className="p-3.5 font-semibold text-white">
-                          {appt.client_name}
-                          <span className="block text-[11px] font-mono text-pink-300/50">{appt.client_phone}</span>
-                        </td>
-                        <td className="p-3.5">{appt.workers?.name || 'Cualquiera'}</td>
-                        <td className="p-3.5">{appt.services?.title || 'Servicio'}</td>
-                        <td className="p-3.5 font-mono text-[11px]">
-                          {new Date(appt.start_time).toLocaleString('es-CO')}
-                        </td>
-                        <td className="p-3.5">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-pink-900/60 text-pink-300 border border-pink-500/30">
-                            {appt.status || 'CONFIRMADA'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-3">
+                {filteredAppts.map((appt) => {
+                  const isExpanded = expandedAppt === appt.id;
+                  const apptDate = new Date(appt.start_time);
+                  const isPast = apptDate < now;
+                  return (
+                    <div key={appt.id} className={`rounded-2xl border transition-all ${
+                      isPast ? 'border-pink-500/10 bg-[#0f0b0f]/60 opacity-70' : 'border-pink-500/20 bg-[#150d15]/60'
+                    }`}>
+                      <button
+                        onClick={() => setExpandedAppt(isExpanded ? null : appt.id)}
+                        className="w-full flex items-center gap-3 p-4 text-left cursor-pointer"
+                      >
+                        {/* Avatar inicial */}
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-500/30 to-purple-600/30 flex items-center justify-center text-sm font-bold text-pink-200 shrink-0">
+                          {appt.client_name?.charAt(0) || '?'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-white truncate">{appt.client_name}</p>
+                          <p className="text-xs text-pink-300/60 truncate">{appt.services?.title || 'Servicio'}</p>
+                        </div>
+                        <div className="text-right shrink-0 mr-1">
+                          <p className="text-xs font-semibold text-pink-200">
+                            {apptDate.toLocaleDateString('es-CO', { month: 'short', day: 'numeric' })}
+                          </p>
+                          <p className="text-[11px] text-pink-300/60 font-mono">
+                            {apptDate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${getApptStatusColor(appt.status)}`}>
+                          {appt.status || 'CONF'}
+                        </span>
+                        {isExpanded ? <ChevronUp className="w-4 h-4 text-pink-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-pink-400/50 shrink-0" />}
+                      </button>
+
+                      {isExpanded && (
+                        <div className="px-4 pb-4 pt-0 border-t border-pink-500/10 space-y-2 text-xs">
+                          <div className="grid grid-cols-2 gap-3 mt-3">
+                            <div>
+                              <p className="text-pink-300/50 uppercase tracking-wider text-[10px] mb-0.5">Especialista</p>
+                              <p className="text-pink-100 font-semibold">{appt.workers?.name || 'Cualquiera'}</p>
+                            </div>
+                            <div>
+                              <p className="text-pink-300/50 uppercase tracking-wider text-[10px] mb-0.5">Precio</p>
+                              <p className="text-pink-100 font-semibold">{appt.services?.price ? formatCurrency(appt.services.price) : '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-pink-300/50 uppercase tracking-wider text-[10px] mb-0.5">Teléfono</p>
+                              <a href={`tel:${appt.client_phone}`} className="text-pink-400 hover:underline font-mono">{appt.client_phone || '—'}</a>
+                            </div>
+                            <div>
+                              <p className="text-pink-300/50 uppercase tracking-wider text-[10px] mb-0.5">Fecha completa</p>
+                              <p className="text-pink-100 font-mono text-[11px]">{apptDate.toLocaleString('es-CO')}</p>
+                            </div>
+                          </div>
+                          {appt.notes && (
+                            <div className="mt-2 p-2 rounded-lg bg-pink-950/20 border border-pink-500/10">
+                              <p className="text-pink-300/50 uppercase tracking-wider text-[10px] mb-0.5">Notas</p>
+                              <p className="text-pink-100">{appt.notes}</p>
+                            </div>
+                          )}
+                          {appt.client_phone && (
+                            <a
+                              href={`https://wa.me/${appt.client_phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola ${appt.client_name}, te confirmamos tu cita en LM Nails & Spa Studio para el ${apptDate.toLocaleDateString('es-CO')} a las ${apptDate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}. ¡Te esperamos! 💅`)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-900/40 border border-emerald-500/30 text-emerald-300 text-xs font-semibold hover:bg-emerald-900/60 transition-colors"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              Confirmar por WhatsApp
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* TAB 4: CONFIGURACIÓN                                   */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* ════════════════════════════════════════════ */}
+        {/* TAB: CONFIGURACIÓN                          */}
+        {/* ════════════════════════════════════════════ */}
         {activeTab === 'settings' && (
           <div className="mt-6 max-w-2xl">
-            <div className="p-6 rounded-2xl bg-[#150d15]/80 border border-pink-500/20">
+            <div className="p-5 sm:p-6 rounded-2xl bg-[#150d15]/80 border border-pink-500/20">
               <h2 className="text-lg font-bold text-white font-serif mb-1">Configuración del Negocio</h2>
-              <p className="text-xs text-pink-300/60 mb-6">
-                Personaliza la información de contacto y políticas de LM Nails & Spa.
-              </p>
+              <p className="text-xs text-pink-300/60 mb-6">Personaliza la información de contacto y políticas de LM Nails & Spa.</p>
 
               <form onSubmit={handleSaveSettings} className="space-y-4">
+                {/* WhatsApp */}
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
-                    WhatsApp de Atención LM Nails
+                    <Phone className="w-3.5 h-3.5 inline mr-1" />
+                    WhatsApp de Atención
                   </label>
                   <input
                     type="text"
                     value={editSettings['whatsapp_number'] !== undefined ? editSettings['whatsapp_number'] : '+57 '}
-                    onChange={(e) => setEditSettings({ ...editSettings, whatsapp_number: e.target.value })}
+                    onChange={e => setEditSettings({ ...editSettings, whatsapp_number: e.target.value })}
                     placeholder="+57 300 123 4567"
-                    className="w-full px-3.5 py-2 bg-black/50 border border-pink-500/20 rounded-xl text-white text-xs focus:border-pink-500 focus:outline-none"
+                    className="w-full px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none placeholder:text-zinc-600"
                   />
                 </div>
 
+                {/* Dirección */}
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
+                    <MapPin className="w-3.5 h-3.5 inline mr-1" />
                     Dirección del Spa
                   </label>
                   <input
                     type="text"
                     value={editSettings['address'] || ''}
-                    onChange={(e) => setEditSettings({ ...editSettings, address: e.target.value })}
-                    placeholder="Calle Principal # 12-34"
-                    className="w-full px-3.5 py-2 bg-black/50 border border-pink-500/20 rounded-xl text-white text-xs focus:border-pink-500 focus:outline-none"
+                    onChange={e => setEditSettings({ ...editSettings, address: e.target.value })}
+                    placeholder="Calle Principal # 12-34, Barrio, Ciudad"
+                    className="w-full px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none placeholder:text-zinc-600"
+                  />
+                </div>
+
+                {/* Instagram */}
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
+                    <AtSign className="w-3.5 h-3.5 inline mr-1" />
+                    Instagram
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-pink-400 text-sm pl-3">@</span>
+                    <input
+                      type="text"
+                      value={(editSettings['instagram'] || '').replace('@', '')}
+                      onChange={e => setEditSettings({ ...editSettings, instagram: e.target.value })}
+                      placeholder="lm.nails.spa"
+                      className="flex-1 px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none placeholder:text-zinc-600"
+                    />
+                  </div>
+                </div>
+
+                {/* Horario general */}
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
+                    <Clock className="w-3.5 h-3.5 inline mr-1" />
+                    Horario General
+                  </label>
+                  <input
+                    type="text"
+                    value={editSettings['horario'] || ''}
+                    onChange={e => setEditSettings({ ...editSettings, horario: e.target.value })}
+                    placeholder="Lun–Sáb: 9am – 7pm"
+                    className="w-full px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none placeholder:text-zinc-600"
+                  />
+                </div>
+
+                {/* Nombre del negocio */}
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
+                    <Star className="w-3.5 h-3.5 inline mr-1" />
+                    Nombre del Negocio
+                  </label>
+                  <input
+                    type="text"
+                    value={editSettings['business_name'] || ''}
+                    onChange={e => setEditSettings({ ...editSettings, business_name: e.target.value })}
+                    placeholder="LM Nails & Spa Studio"
+                    className="w-full px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none placeholder:text-zinc-600"
+                  />
+                </div>
+
+                {/* Política de cancelación */}
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
+                    <Shield className="w-3.5 h-3.5 inline mr-1" />
+                    Política de Cancelación
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={editSettings['cancellation_policy'] || ''}
+                    onChange={e => setEditSettings({ ...editSettings, cancellation_policy: e.target.value })}
+                    placeholder="Cancela con mínimo 24 horas de anticipación para reprogramar tu cita sin costo..."
+                    className="w-full px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none placeholder:text-zinc-600 resize-none"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={savingSettings}
-                  className="w-full mt-4 py-2.5 px-4 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                  className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white font-bold text-sm uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 shadow-lg shadow-pink-900/30"
                 >
-                  {savingSettings ? 'Guardando...' : 'Guardar Cambios'}
+                  {savingSettings ? 'Guardando…' : '✨ Guardar Configuración'}
                 </button>
               </form>
             </div>
@@ -1024,111 +1163,124 @@ export default function ManicuraAdminPage() {
         )}
       </main>
 
-      {/* ══════════════════════════════════════════════════════ */}
-      {/* MODAL MANICURISTA                                      */}
-      {/* ══════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════ */}
+      {/* MODAL: MANICURISTA                          */}
+      {/* ════════════════════════════════════════════ */}
       {showWorkerModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#150d15] border border-pink-500/30 rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-pink-500/20">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#150d15] border border-pink-500/30 rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div className="sticky top-0 bg-[#150d15] flex items-center justify-between p-5 border-b border-pink-500/20 z-10">
               <h3 className="text-sm font-bold text-white uppercase tracking-wider font-serif">
-                {editingWorker ? 'Editar Manicurista' : 'Nueva Manicurista'}
+                {editingWorker ? '✏️ Editar Especialista' : '💅 Nueva Especialista'}
               </h3>
-              <button
-                onClick={() => setShowWorkerModal(false)}
-                className="text-pink-300/60 hover:text-white"
-              >
+              <button onClick={() => setShowWorkerModal(false)} className="text-pink-300/60 hover:text-white p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveWorker} className="space-y-4 mt-4">
+            <form onSubmit={handleSaveWorker} className="p-5 space-y-4">
+              {/* Avatar preview + upload */}
+              <div className="flex items-center gap-4">
+                <div className="relative shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={workerFormAvatarUrl || '/logo_lmnail.jpg'}
+                    alt="Vista previa"
+                    className="w-20 h-20 rounded-2xl object-cover ring-2 ring-pink-300/30"
+                  />
+                  {uploadingAvatar && (
+                    <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center">
+                      <Upload className="w-5 h-5 text-pink-400 animate-pulse" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 space-y-2">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70">Foto de Perfil</label>
+                  <label className="cursor-pointer block">
+                    <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleAvatarUpload} className="hidden" disabled={uploadingAvatar} />
+                    <span className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-xl bg-pink-500/15 border border-pink-500/30 text-pink-200 text-xs font-semibold hover:bg-pink-500/25 transition-colors">
+                      <Camera className="w-4 h-4" />
+                      {uploadingAvatar ? 'Subiendo…' : 'Subir Foto'}
+                    </span>
+                  </label>
+                  <input
+                    type="url"
+                    value={workerFormAvatarUrl}
+                    onChange={e => setWorkerFormAvatarUrl(e.target.value)}
+                    placeholder="O pega URL de imagen"
+                    className="w-full px-2.5 py-1.5 bg-black/50 border border-pink-500/20 rounded-lg text-white text-xs focus:border-pink-500 focus:outline-none placeholder:text-zinc-600"
+                  />
+                </div>
+              </div>
+
+              {/* Nombre */}
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
-                  Nombre Completo *
-                </label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">Nombre Completo *</label>
                 <input
                   type="text"
                   required
                   value={workerFormName}
-                  onChange={(e) => setWorkerFormName(e.target.value)}
+                  onChange={e => setWorkerFormName(e.target.value)}
                   placeholder="Ej. Laura Martínez"
-                  className="w-full px-3.5 py-2 bg-black/50 border border-pink-500/20 rounded-xl text-white text-xs focus:border-pink-500 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none"
                 />
               </div>
 
+              {/* Teléfono */}
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
-                  Teléfono / WhatsApp
-                </label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">Teléfono / WhatsApp</label>
                 <input
                   type="text"
                   value={workerFormPhone}
-                  onChange={(e) => setWorkerFormPhone(e.target.value)}
-                  placeholder="Ej. 3001234567"
-                  className="w-full px-3.5 py-2 bg-black/50 border border-pink-500/20 rounded-xl text-white text-xs focus:border-pink-500 focus:outline-none"
+                  onChange={e => setWorkerFormPhone(e.target.value)}
+                  placeholder="+57 300 123 4567"
+                  className="w-full px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none"
                 />
               </div>
 
+              {/* Bio */}
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
-                  Especialidad / Biografía
-                </label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">Especialidad / Biografía</label>
                 <textarea
                   rows={2}
                   value={workerFormBio}
-                  onChange={(e) => setWorkerFormBio(e.target.value)}
+                  onChange={e => setWorkerFormBio(e.target.value)}
                   placeholder="Especialista en acrílicas y diseño mano alzada"
-                  className="w-full px-3.5 py-2 bg-black/50 border border-pink-500/20 rounded-xl text-white text-xs focus:border-pink-500 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none resize-none"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">Foto de Perfil</label>
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <img
-                      src={workerFormAvatarUrl || '/logo_lmnail.jpg'}
-                      alt="Vista previa"
-                      className="h-14 w-14 rounded-xl object-cover ring-2 ring-pink-300/30"
-                    />
-                    {uploadingAvatar && (
-                      <div className="absolute inset-0 bg-black/60 rounded-xl flex items-center justify-center">
-                        <Upload className="w-5 h-5 text-pink-400 animate-pulse" />
-                      </div>
-                    )}
-                  </div>
-                  <label className="flex-1 cursor-pointer">
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={handleAvatarUpload}
-                      className="hidden"
-                      disabled={uploadingAvatar}
-                    />
-                    <span className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-pink-500/15 border border-pink-500/30 text-pink-200 text-xs font-semibold hover:bg-pink-500/25 transition-colors">
-                      <Camera className="w-4 h-4" />
-                      {uploadingAvatar ? 'Subiendo...' : 'Elegir Foto'}
-                    </span>
-                  </label>
+              {/* Acepta citas */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-pink-950/20 border border-pink-500/15">
+                <div>
+                  <p className="text-sm font-semibold text-white">Acepta Citas Online</p>
+                  <p className="text-xs text-pink-300/60">Aparecerá como opción al agendar</p>
                 </div>
-                <p className="text-[10px] text-pink-300/50 mt-1">JPG, PNG o WebP. Máx 5MB.</p>
+                <button
+                  type="button"
+                  onClick={() => setWorkerFormAcceptsAppts(!workerFormAcceptsAppts)}
+                  className="cursor-pointer"
+                >
+                  {workerFormAcceptsAppts
+                    ? <ToggleRight className="w-7 h-7 text-emerald-400" />
+                    : <ToggleLeft className="w-7 h-7 text-zinc-500" />}
+                </button>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-pink-500/10">
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowWorkerModal(false)}
-                  className="px-4 py-2 rounded-xl text-pink-300 text-xs font-semibold hover:bg-pink-950/30"
+                  className="flex-1 py-2.5 rounded-xl text-pink-300 text-sm font-semibold hover:bg-pink-950/30 border border-pink-500/20"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={savingWorker}
-                  className="px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-sm font-bold transition-all disabled:opacity-50 cursor-pointer"
                 >
-                  {savingWorker ? 'Guardando...' : 'Guardar'}
+                  {savingWorker ? 'Guardando…' : 'Guardar'}
                 </button>
               </div>
             </form>
@@ -1136,95 +1288,126 @@ export default function ManicuraAdminPage() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════ */}
-      {/* MODAL SERVICIO                                         */}
-      {/* ══════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════ */}
+      {/* MODAL: SERVICIO                             */}
+      {/* ════════════════════════════════════════════ */}
       {showServiceModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#150d15] border border-pink-500/30 rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-pink-500/20">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#150d15] border border-pink-500/30 rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md shadow-2xl max-h-[92vh] overflow-y-auto">
+            <div className="sticky top-0 bg-[#150d15] flex items-center justify-between p-5 border-b border-pink-500/20 z-10">
               <h3 className="text-sm font-bold text-white uppercase tracking-wider font-serif">
-                {editingService ? 'Editar Servicio' : 'Nuevo Servicio LM Nails'}
+                {editingService ? '✏️ Editar Servicio' : '✨ Nuevo Servicio LM Nails'}
               </h3>
-              <button
-                onClick={() => setShowServiceModal(false)}
-                className="text-pink-300/60 hover:text-white"
-              >
+              <button onClick={() => setShowServiceModal(false)} className="text-pink-300/60 hover:text-white p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveService} className="space-y-4 mt-4">
+            <form onSubmit={handleSaveService} className="p-5 space-y-4">
+              {/* Imagen del servicio */}
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
-                  Título del Servicio *
+                <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-2">
+                  <ImageIcon className="w-3.5 h-3.5 inline mr-1" />
+                  Imagen del Servicio
                 </label>
+                <div className="relative h-36 rounded-xl overflow-hidden bg-pink-950/20 border border-pink-500/20 mb-2">
+                  {serviceFormImageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={serviceFormImageUrl} alt="Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <ImageIcon className="w-8 h-8 text-pink-500/20" />
+                    </div>
+                  )}
+                  {uploadingServiceImage && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                      <Upload className="w-5 h-5 text-pink-400 animate-pulse" />
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label className="cursor-pointer block">
+                    <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleServiceImageUpload} className="hidden" disabled={uploadingServiceImage} />
+                    <span className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-xl bg-pink-500/15 border border-pink-500/30 text-pink-200 text-xs font-semibold hover:bg-pink-500/25 transition-colors">
+                      <Camera className="w-4 h-4" />
+                      {uploadingServiceImage ? 'Subiendo…' : 'Subir Imagen'}
+                    </span>
+                  </label>
+                  <input
+                    type="url"
+                    value={serviceFormImageUrl}
+                    onChange={e => setServiceFormImageUrl(e.target.value)}
+                    placeholder="O pega URL de imagen (Unsplash, etc.)"
+                    className="w-full px-3 py-2 bg-black/50 border border-pink-500/20 rounded-xl text-white text-xs focus:border-pink-500 focus:outline-none placeholder:text-zinc-600"
+                  />
+                </div>
+              </div>
+
+              {/* Título */}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">Título del Servicio *</label>
                 <input
                   type="text"
                   required
                   value={serviceFormTitle}
-                  onChange={(e) => setServiceFormTitle(e.target.value)}
-                  placeholder="Ej. Uñas Acrílicas Esculpidas"
-                  className="w-full px-3.5 py-2 bg-black/50 border border-pink-500/20 rounded-xl text-white text-xs focus:border-pink-500 focus:outline-none"
+                  onChange={e => setServiceFormTitle(e.target.value)}
+                  placeholder="Ej. Manicura Rusa Combinada"
+                  className="w-full px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none"
                 />
               </div>
 
+              {/* Precio + Duración */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
-                    Precio ($ COP) *
-                  </label>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">Precio COP *</label>
                   <input
                     type="number"
                     required
                     value={serviceFormPrice}
-                    onChange={(e) => setServiceFormPrice(e.target.value)}
+                    onChange={e => setServiceFormPrice(e.target.value)}
                     placeholder="85000"
-                    className="w-full px-3.5 py-2 bg-black/50 border border-pink-500/20 rounded-xl text-white text-xs focus:border-pink-500 focus:outline-none"
+                    className="w-full px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
-                    Duración (min) *
-                  </label>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">Duración (min) *</label>
                   <input
                     type="number"
                     required
                     value={serviceFormDuration}
-                    onChange={(e) => setServiceFormDuration(e.target.value)}
+                    onChange={e => setServiceFormDuration(e.target.value)}
                     placeholder="90"
-                    className="w-full px-3.5 py-2 bg-black/50 border border-pink-500/20 rounded-xl text-white text-xs focus:border-pink-500 focus:outline-none"
+                    className="w-full px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none"
                   />
                 </div>
               </div>
 
+              {/* Descripción */}
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">
-                  Descripción
-                </label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-pink-200/70 mb-1">Descripción</label>
                 <textarea
                   rows={2}
                   value={serviceFormDesc}
-                  onChange={(e) => setServiceFormDesc(e.target.value)}
+                  onChange={e => setServiceFormDesc(e.target.value)}
                   placeholder="Incluye limpieza profunda, tips y esmaltado semipermanente"
-                  className="w-full px-3.5 py-2 bg-black/50 border border-pink-500/20 rounded-xl text-white text-xs focus:border-pink-500 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 bg-black/50 border border-pink-500/20 rounded-xl text-white text-sm focus:border-pink-500 focus:outline-none resize-none"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-pink-500/10">
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowServiceModal(false)}
-                  className="px-4 py-2 rounded-xl text-pink-300 text-xs font-semibold hover:bg-pink-950/30"
+                  className="flex-1 py-2.5 rounded-xl text-pink-300 text-sm font-semibold hover:bg-pink-950/30 border border-pink-500/20"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={savingService}
-                  className="px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-sm font-bold transition-all disabled:opacity-50 cursor-pointer"
                 >
-                  {savingService ? 'Guardando...' : 'Guardar'}
+                  {savingService ? 'Guardando…' : 'Guardar'}
                 </button>
               </div>
             </form>
@@ -1232,29 +1415,32 @@ export default function ManicuraAdminPage() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════ */}
-      {/* MODAL DE CONFIRMACIÓN DE BORRADO                       */}
-      {/* ══════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════ */}
+      {/* MODAL: CONFIRMAR BORRADO                    */}
+      {/* ════════════════════════════════════════════ */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#150d15] border border-red-500/30 rounded-2xl max-w-sm w-full p-6 shadow-2xl">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Confirmar Eliminación</h3>
-            <p className="text-xs text-pink-200/70 mt-2">
-              ¿Estás segura de que deseas eliminar a <span className="text-white font-bold">{deleteTarget.name}</span>? Esta acción no se puede deshacer.
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-red-950/60 border border-red-500/30 flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-red-400" />
+              </div>
+              <h3 className="text-sm font-bold text-white">Confirmar Eliminación</h3>
+            </div>
+            <p className="text-xs text-pink-200/70">
+              ¿Estás segura de que deseas eliminar <span className="text-white font-bold">"{deleteTarget.name}"</span>?
+              Esta acción no se puede deshacer.
             </p>
-            <div className="flex items-center justify-end gap-3 mt-6">
-              <button
-                onClick={() => setDeleteTarget(null)}
-                className="px-3 py-1.5 rounded-lg text-xs text-pink-300 hover:bg-pink-950/40"
-              >
+            <div className="flex items-center justify-end gap-3 mt-5">
+              <button onClick={() => setDeleteTarget(null)} className="px-4 py-2 rounded-xl text-xs text-pink-300 hover:bg-pink-950/40 border border-pink-500/20 font-semibold">
                 Cancelar
               </button>
               <button
                 onClick={handleConfirmDelete}
                 disabled={deletingItem}
-                className="px-4 py-1.5 rounded-lg text-xs bg-red-600 hover:bg-red-500 text-white font-bold transition-all disabled:opacity-50"
+                className="px-4 py-2 rounded-xl text-xs bg-red-600 hover:bg-red-500 text-white font-bold transition-all disabled:opacity-50 cursor-pointer"
               >
-                {deletingItem ? 'Eliminando...' : 'Eliminar Definitivamente'}
+                {deletingItem ? 'Eliminando…' : 'Eliminar'}
               </button>
             </div>
           </div>

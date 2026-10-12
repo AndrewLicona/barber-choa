@@ -30,6 +30,18 @@ export class WorkersService {
         user: { select: { id: true, email: true, role: true } },
         schedules: { orderBy: { day_of_week: 'asc' } },
         schedule_exceptions: true,
+        portfolio_items: {
+          where: { is_active: true },
+          select: { id: true, title: true, image_url: true, tags: true },
+          orderBy: { created_at: 'desc' },
+        },
+        worker_services: {
+          include: {
+            service: {
+              select: { id: true, title: true, price: true, duration_minutes: true, description: true, category: true, image_url: true },
+            },
+          },
+        },
       },
     });
 

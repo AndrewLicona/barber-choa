@@ -11,6 +11,7 @@ import { ScheduleModal } from './ScheduleModal';
 interface AdminBarbersSectionProps {
   workers: Worker[];
   schedules: Schedule[];
+  currentWorkerId?: string | null;
   onSaveBarber: (
     worker: Worker | null,
     data: {
@@ -19,6 +20,9 @@ interface AdminBarbersSectionProps {
       bio?: string;
       avatar_url?: string;
       accepts_appointments: boolean;
+      instagram_url?: string;
+      facebook_url?: string;
+      tiktok_url?: string;
     },
   ) => Promise<{ credentials?: { email: string; password: string } } | void>;
   onToggleActive: (worker: Worker) => Promise<void>;
@@ -37,6 +41,7 @@ interface AdminBarbersSectionProps {
 export function AdminBarbersSection({
   workers,
   schedules,
+  currentWorkerId,
   onSaveBarber,
   onToggleActive,
   onDeleteRequest,
@@ -78,6 +83,9 @@ export function AdminBarbersSection({
       bio?: string;
       avatar_url?: string;
       accepts_appointments: boolean;
+      instagram_url?: string;
+      facebook_url?: string;
+      tiktok_url?: string;
     },
   ) => {
     const result = await onSaveBarber(worker, data);
@@ -151,116 +159,153 @@ export function AdminBarbersSection({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {workers.map((worker) => (
-            <div
-              key={worker.id}
-              className={`p-5 rounded-2xl border transition-all ${
-                worker.is_active
-                  ? 'bg-[#121216] border-white/10 hover:border-[#d4af37]/40'
-                  : 'bg-[#121216]/50 border-white/5 opacity-60'
-              }`}
-            >
-              <div className="flex items-start gap-4 mb-4">
-                <div className="relative">
-                  <div className="w-14 h-14 rounded-2xl overflow-hidden ring-1 ring-white/10 bg-black shrink-0">
-                    <img
-                      src={worker.avatar_url || '/logo_barberchoa.jpg'}
-                      alt={worker.name}
-                      className="w-full h-full object-cover"
-                    />
+          {workers.map((worker) => {
+            // Determinar si el usuario actual puede editar/eliminar este trabajador
+            const canEdit = isAdmin || currentWorkerId === worker.id;
+            const canDelete = isAdmin;
+            const canSchedule = isAdmin || currentWorkerId === worker.id;
+            const canToggle = isAdmin || currentWorkerId === worker.id;
+
+            return (
+              <div
+                key={worker.id}
+                className={`p-5 rounded-2xl border transition-all ${
+                  worker.is_active
+                    ? 'bg-[#121216] border-white/10 hover:border-[#d4af37]/40'
+                    : 'bg-[#121216]/50 border-white/5 opacity-60'
+                }`}
+              >
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="relative">
+                    <div className="w-14 h-14 rounded-2xl overflow-hidden ring-1 ring-white/10 bg-black shrink-0">
+                      <img
+                        src={worker.avatar_url || '/logo_barberchoa.jpg'}
+                        alt={worker.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    {worker.is_active && (
+                      <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-[#121216] rounded-full" />
+                    )}
                   </div>
-                  {worker.is_active && (
-                    <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-[#121216] rounded-full" />
-                  )}
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-sm font-bold text-white truncate">{worker.name}</h4>
+                      <span
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold ${
+                          worker.is_active
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : 'bg-zinc-800 text-zinc-400'
+                        }`}
+                      >
+                        {worker.is_active ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-zinc-400 font-mono mt-1 flex items-center gap-1.5">
+                      <Phone className="w-3 h-3 text-[#d4af37]" />
+                      <span>{worker.phone || 'Sin teléfono'}</span>
+                    </p>
+
+                    {worker.bio && (
+                      <p className="text-xs text-zinc-500 mt-2 line-clamp-2">
+                        {worker.bio}
+                      </p>
+                    )}
+
+                    {/* Redes Sociales del Trabajador */}
+                    <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.04] text-zinc-300 border border-white/5">
+                        {worker.accepts_appointments ? '📅 Acepta Citas' : '💈 Solo Turnos en Fila'}
+                      </span>
+
+                      {worker.instagram_url && (
+                        <a
+                          href={worker.instagram_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-zinc-400 hover:text-rose-500 transition-colors"
+                          title="Instagram"
+                        >
+                          <span className="text-[11px]">📷</span>
+                        </a>
+                      )}
+                      {worker.facebook_url && (
+                        <a
+                          href={worker.facebook_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-zinc-400 hover:text-blue-500 transition-colors"
+                          title="Facebook"
+                        >
+                          <span className="text-[11px]">📘</span>
+                        </a>
+                      )}
+                      {worker.tiktok_url && (
+                        <a
+                          href={worker.tiktok_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-zinc-400 hover:text-black transition-colors"
+                          title="TikTok"
+                        >
+                          <span className="text-[11px]">🎵</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="text-sm font-bold text-white truncate">{worker.name}</h4>
-                    <span
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold ${
+                {/* Botones de acción inferior */}
+                <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between gap-2">
+                  {canToggle && (
+                    <button
+                      onClick={() => onToggleActive(worker)}
+                      className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${
                         worker.is_active
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : 'bg-zinc-800 text-zinc-400'
+                          ? 'text-zinc-400 border-white/10 hover:bg-white/5'
+                          : 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
                       }`}
                     >
-                      {worker.is_active ? 'Activo' : 'Inactivo'}
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-zinc-400 font-mono mt-1 flex items-center gap-1.5">
-                    <Phone className="w-3 h-3 text-[#d4af37]" />
-                    <span>{worker.phone || 'Sin teléfono'}</span>
-                  </p>
-
-                  {worker.bio && (
-                    <p className="text-xs text-zinc-500 mt-2 line-clamp-2">
-                      {worker.bio}
-                    </p>
+                      {worker.is_active ? 'Desactivar' : 'Activar'}
+                    </button>
                   )}
 
-                  <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.04] text-zinc-300 border border-white/5">
-                      {worker.accepts_appointments ? '📅 Acepta Citas' : '💈 Solo Turnos en Fila'}
-                    </span>
-
-                    {/* Botón de acceso a credenciales en la tarjeta */}
-                    {isAdmin && onGetCredentials && (
+                  <div className="flex items-center gap-1.5">
+                    {canSchedule && (
                       <button
-                        type="button"
-                        onClick={() => handleShowCredentials(worker)}
-                        disabled={loadingCredsId === worker.id}
-                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-[#d4af37]/15 hover:bg-[#d4af37]/25 text-[#f3e5ab] text-[10px] font-mono border border-[#d4af37]/30 transition-colors"
+                        onClick={() => setScheduleWorker(worker)}
+                        className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 border border-white/5 transition-colors"
+                        title="Configurar Horarios"
                       >
-                        <KeyRound className={`w-3 h-3 text-[#d4af37] ${loadingCredsId === worker.id ? 'animate-spin' : ''}`} />
-                        <span>{loadingCredsId === worker.id ? 'Cargando...' : 'Ver / Restablecer Clave'}</span>
+                        <Clock className="w-4 h-4 text-[#d4af37]" />
+                      </button>
+                    )}
+                    {canEdit && (
+                      <button
+                        onClick={() => openEdit(worker)}
+                        className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 border border-white/5 transition-colors"
+                        title="Editar"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    {canDelete && (
+                      <button
+                        onClick={() => onDeleteRequest(worker)}
+                        className="p-2 text-zinc-400 hover:text-red-400 rounded-lg hover:bg-white/5 border border-white/5 transition-colors"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     )}
                   </div>
                 </div>
               </div>
-
-              {/* Botones de acción inferior */}
-              <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between gap-2">
-                <button
-                  onClick={() => onToggleActive(worker)}
-                  className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${
-                    worker.is_active
-                      ? 'text-zinc-400 border-white/10 hover:bg-white/5'
-                      : 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
-                  }`}
-                >
-                  {worker.is_active ? 'Desactivar' : 'Activar'}
-                </button>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => setScheduleWorker(worker)}
-                    className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 border border-white/5 transition-colors"
-                    title="Configurar Horarios"
-                  >
-                    <Clock className="w-4 h-4 text-[#d4af37]" />
-                  </button>
-                  <button
-                    onClick={() => openEdit(worker)}
-                    className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/5 border border-white/5 transition-colors"
-                    title="Editar Barbero"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  {isAdmin && (
-                    <button
-                      onClick={() => onDeleteRequest(worker)}
-                      className="p-2 text-zinc-400 hover:text-red-400 rounded-lg hover:bg-white/5 border border-white/5 transition-colors"
-                      title="Eliminar Barbero"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
+            )
+}
+          )}
         </div>
       )}
 

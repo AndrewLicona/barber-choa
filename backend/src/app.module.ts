@@ -10,6 +10,7 @@ import { AppointmentsModule } from './appointments/appointments.module';
 import { PublicModule } from './public/public.module';
 import { MediaModule } from './media/media.module';
 import { PortfolioModule } from './portfolio/portfolio.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { PortfolioModule } from './portfolio/portfolio.module';
     PublicModule,
     MediaModule,
     PortfolioModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

@@ -1,0 +1,1 @@
+SELECT id, email, auth_user_id, role, is_active FROM "user" ORDER BY id;

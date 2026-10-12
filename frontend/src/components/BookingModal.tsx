@@ -83,8 +83,9 @@ export function BookingModal({ service, services = [], isOpen, onClose, defaultW
     setBookingError(null);
     setSelectedTime('');
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+    const businessSlug = currentService.business_type === 'barberia' ? 'barberia' : 'manicura';
     fetch(
-      `${apiUrl}/appointments/availability?businessSlug=${currentService.business_type}&serviceId=${currentService.id}&workerId=${selectedWorkerId}&date=${date}`,
+      `${apiUrl}/appointments/availability?businessSlug=${businessSlug}&serviceId=${currentService.id}&workerId=${selectedWorkerId}&date=${date}`,
       { signal: controller.signal }
     )
       .then(async (response) => {
@@ -130,11 +131,12 @@ export function BookingModal({ service, services = [], isOpen, onClose, defaultW
     const cleanPhone = clientPhone.trim().replace(/\s+/g, '').replace(/^\+57/, '').replace(/^57/, '');
     const formattedPhone = `+57 ${cleanPhone}`;
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+    const businessSlug = activeService.business_type === 'barberia' ? 'barberia' : 'manicura';
     const response = await fetch(`${apiUrl}/appointments/public`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        businessSlug: activeService.business_type,
+        businessSlug,
         serviceId: activeService.id,
         workerId: selectedWorker.id,
         date,

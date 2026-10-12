@@ -17,6 +17,7 @@ export interface NestJSUser {
   role: string;
   worker?: any;
   accessToken: string;
+  businessId?: string;
 }
 
 export function getNestJSToken(): string | null {
@@ -60,6 +61,7 @@ export async function nestJSLogin(email: string, password: string): Promise<Nest
     role: data.user.role,
     worker: data.user.worker,
     accessToken: data.accessToken,
+    businessId: data.user.businessId,
   };
   setNestJSToken(data.accessToken, user);
   return user;

@@ -64,9 +64,14 @@ model Business {
   address       String?
   phone         String?
   instagram_url String?
+  facebook_url  String?
+  tiktok_url    String?
+  website_url   String?
   logo_url      String?  @default("/logo_barberchoa.jpg")
   hero_image_url String?
   map_url       String?
+  latitude      Float?
+  longitude     Float?
   booking_message String?
   timezone      String   @default("America/Bogota")
   is_active     Boolean  @default(true)
@@ -133,6 +138,10 @@ model Worker {
   accepts_appointments Boolean  @default(true)
   business_type        String   @default("barberia") // 'barberia' | 'manicura'
   is_active            Boolean  @default(true)
+  // Redes sociales del trabajador
+  instagram_url        String?
+  facebook_url         String?
+  tiktok_url           String?
   created_at           DateTime @default(now())
   updated_at           DateTime @updatedAt
 

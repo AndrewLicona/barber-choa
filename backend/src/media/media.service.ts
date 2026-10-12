@@ -5,11 +5,11 @@ import { randomUUID } from 'crypto';
 @Injectable()
 export class MediaService {
   private getSupabaseAdmin() {
-    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://eukuwryssmpkqkiwcufr.supabase.co';
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV1a3V3cnlzc21wa3FraXdjdWZyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4OTY3MzQ5MCwiZXhwIjoyMTA1MjQ5NDkwfQ.4hUFbDT8CPA3ykv_36uxgqxw7WkC0Z3Fn-lrANm6vyY';
+    const url = process.env.SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!url || !serviceRoleKey) {
-      throw new BadRequestException('Supabase storage not configured');
+      throw new BadRequestException('Supabase storage not configured: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
     }
 
     return createClient(url, serviceRoleKey, {

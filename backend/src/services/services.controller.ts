@@ -19,6 +19,11 @@ export class ServicesController {
     return this.servicesService.findOne(id);
   }
 
+  @Get('worker/:workerId')
+  async findByWorker(@Param('workerId') workerId: string) {
+    return this.servicesService.findByWorkerId(workerId);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post()
   async create(@Body() body: any) {

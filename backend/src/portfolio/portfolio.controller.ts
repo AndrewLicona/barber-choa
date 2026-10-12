@@ -35,6 +35,13 @@ export class PortfolioController {
     return this.portfolioService.findAllByBusinessSlug(slug, category);
   }
 
+  @Get('public/worker/:workerId')
+  async getPublicPortfolioByWorker(
+    @Param('workerId') workerId: string,
+  ) {
+    return this.portfolioService.findByWorkerId(workerId);
+  }
+
   // Admin autenticado
   @UseGuards(JwtAuthGuard)
   @Get('admin')

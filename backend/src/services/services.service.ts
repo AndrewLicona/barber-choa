@@ -30,6 +30,29 @@ export class ServicesService {
     return service;
   }
 
+  async findByWorkerId(workerId: string) {
+    const worker = await this.prisma.worker.findUnique({
+      where: { id: workerId },
+      select: { id: true, business_id: true },
+    });
+
+    if (!worker) {
+      throw new NotFoundException(`Trabajador no encontrado`);
+    }
+
+    return this.prisma.service.findMany({
+      where: {
+        business_id: worker.business_id,
+        is_active: true,
+        worker_services: {
+          some: { worker_id: workerId },
+        },
+      },
+      include: { business: true },
+      orderBy: [{ display_order: 'asc' }, { created_at: 'asc' }],
+    });
+  }
+
   async create(data: {
     title: string;
     description?: string;

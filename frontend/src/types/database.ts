@@ -30,7 +30,18 @@ export interface Worker {
   specialties?: string[];
   display_order?: number;
   is_public?: boolean;
+  // Redes sociales del trabajador
+  instagram_url?: string | null;
+  facebook_url?: string | null;
+  tiktok_url?: string | null;
   created_at?: string;
+  // Relaciones (opcionales, para vistas públicas)
+  schedules?: Schedule[];
+  portfolio_items?: PortfolioItem[];
+  worker_services?: Array<{
+    service: Service;
+  }>;
+  business?: Business;
 }
 
 export interface Service {
@@ -106,11 +117,27 @@ export interface LiveQueueItem {
   worker?: Worker;
 }
 
-export interface BusinessSettings {
+export interface Business {
   id: string;
-  business_id?: string;
-  key: string;
-  value: string;
+  slug: string;
+  name: string;
+  business_type: BusinessType;
+  description?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  instagram_url?: string | null;
+  facebook_url?: string | null;
+  tiktok_url?: string | null;
+  website_url?: string | null;
+  logo_url?: string | null;
+  hero_image_url?: string | null;
+  map_url?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  booking_message?: string | null;
+  timezone?: string;
+  is_active?: boolean;
+  created_at?: string;
   updated_at?: string;
 }
 
@@ -135,4 +162,12 @@ export interface GalleryItem {
   tags?: string[];
   is_featured?: boolean;
   created_at?: string;
+}
+
+export interface BusinessSettings {
+  id: string;
+  business_id?: string;
+  key: string;
+  value: string;
+  updated_at?: string;
 }

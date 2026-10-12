@@ -32,6 +32,31 @@ export class PortfolioService {
     });
   }
 
+  async findByWorkerId(workerId: string) {
+    const worker = await this.prisma.worker.findUnique({
+      where: { id: workerId, is_active: true },
+      select: { id: true, business_id: true },
+    });
+
+    if (!worker) {
+      throw new NotFoundException(`Trabajador no encontrado`);
+    }
+
+    return this.prisma.portfolioItem.findMany({
+      where: {
+        worker_id: workerId,
+        is_active: true,
+      },
+      select: {
+        id: true,
+        title: true,
+        image_url: true,
+        tags: true,
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
   async findAllAdmin(businessId: string, category?: string) {
     const where: any = { business_id: businessId };
     if (category) where.tags = { has: category };

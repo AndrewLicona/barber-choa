@@ -1,16 +1,58 @@
-// @ts-nocheck
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSupabase } from '@/lib/supabase/client';
 import { getNestJSToken, getNestJSUser, nestJSLogout, nestJSFetch } from '@/lib/auth-context';
 import { Worker, Service, LiveQueueItem, Schedule, PortfolioItem } from '@/types/database';
 import { ToastData } from '@/components/ui/Toast';
 
-export function useBarberiaAdmin() {
+interface BarberiaAdminData {
+  sessionLoading: boolean;
+  isAuthenticated: boolean;
+  userEmail: string | null;
+  isAdmin: boolean;
+  userRole: string;
+  loading: boolean;
+  toastMessage: ToastData | null;
+  queue: LiveQueueItem[];
+  workers: Worker[];
+  services: Service[];
+  portfolio: PortfolioItem[];
+  schedules: Schedule[];
+  settings: Record<string, string>;
+  business: Record<string, any> | null;
+  masterBarber: Worker | null;
+  collabBarbers: Worker[];
+  currentWorker: Worker | null;
+  showToast: (text: string, type: 'success' | 'error') => void;
+  dismissToast: () => void;
+  handleLogout: () => Promise<void>;
+  advanceQueue: (workerId: string) => Promise<void>;
+  addWalkInToQueue: (name: string, phone?: string, workerId?: string) => Promise<void>;
+  removeQueueItem: (queueItemId: string) => Promise<void>;
+  saveBarber: (
+    editingWorker: Worker | null,
+    data: { name: string; phone: string; bio?: string; avatar_url?: string; accepts_appointments: boolean }
+  ) => Promise<{ credentials?: { email: string; password: string } } | void>;
+  toggleBarberActive: (worker: Worker) => Promise<void>;
+  deleteBarber: (id: string) => Promise<void>;
+  getOrResetBarberCredentials: (workerId: string) => Promise<{ email: string; password: string }>;
+  saveService: (
+    editingService: Service | null,
+    data: { title: string; price: number; duration_minutes: number; description?: string; image_url?: string }
+  ) => Promise<void>;
+  toggleServiceActive: (service: Service) => Promise<void>;
+  deleteService: (id: string) => Promise<void>;
+  savePortfolioItem: (data: { title: string; image_url: string; tags: string[] }) => Promise<void>;
+  deletePortfolioItem: (id: string) => Promise<void>;
+  saveSchedule: (workerId: string, dayOfWeek: number, data: { start_time: string; end_time: string; is_active: boolean }) => Promise<void>;
+  copyScheduleToWeek: (workerId: string, baseDayOfWeek?: number) => Promise<void>;
+  saveSettings: (newSettings: Record<string, string>) => Promise<void>;
+  refresh: () => void;
+}
+
+export function useBarberiaAdmin(): BarberiaAdminData {
   const router = useRouter();
-  const supabase = getSupabase();
 
   const [sessionLoading, setSessionLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -18,7 +60,6 @@ export function useBarberiaAdmin() {
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState<ToastData | null>(null);
 
-  // Data states
   const [queue, setQueue] = useState<LiveQueueItem[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -29,573 +70,350 @@ export function useBarberiaAdmin() {
   const [isAdmin, setIsAdmin] = useState(true);
   const [userRole, setUserRole] = useState<string>('ADMIN');
 
+  const [masterBarber, setMasterBarber] = useState<Worker | null>(null);
+  const [collabBarbers, setCollabBarbers] = useState<Worker[]>([]);
+  const [currentWorker, setCurrentWorker] = useState<Worker | null>(null);
+
   const showToast = useCallback((text: string, type: 'success' | 'error' = 'success') => {
     setToastMessage({ text, type });
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 4000);
+    setTimeout(() => { setToastMessage(null); }, 4000);
   }, []);
 
-  // 1. Auth check
-  useEffect(() => {
-    const checkAuth = () => {
-      const token = getNestJSToken();
-      const user = getNestJSUser();
-      if (!token || !user) {
-        setIsAuthenticated(false);
-        router.replace('/barberia/login');
-      } else {
-        setIsAuthenticated(true);
-        setUserEmail(user.email || 'Administrador Barbería');
-        const role = (user.role || '').toUpperCase();
-        setUserRole(role);
-        // Barbers have role 'WORKER' or 'WORKER_WALKIN' unless they are ADMIN or SUPERADMIN
-        const isWorkerOnly = role.includes('WORKER') && !role.includes('ADMIN') && !role.includes('SUPER');
-        setIsAdmin(!isWorkerOnly);
-      }
-      setSessionLoading(false);
-    };
+  const dismissToast = useCallback(() => { setToastMessage(null); }, []);
 
-    checkAuth();
-  }, [router]);
+  const apiFetch = useCallback(async (endpoint: string, options: RequestInit = {}) => {
+    const token = getNestJSToken();
+    return fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api'}${endpoint}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+    });
+  }, []);
 
-  // 2. Load admin data
+  const getBusinessId = useCallback((): string | null => {
+    const user = getNestJSUser();
+    if (!user || !user.businessId) return null;
+    return user.businessId;
+  }, []);
+
   const loadData = useCallback(async (isInitial = false) => {
-    if (!supabase) return;
     if (isInitial) setLoading(true);
     try {
-      const { data: bData } = await supabase
-        .from('businesses')
-        .select('id, name, phone, address, instagram_url, logo_url, description, booking_message')
-        .eq('slug', 'barberia')
-        .maybeSingle();
-      const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
-      if (bData) setBusiness(bData);
+      const businessId = getBusinessId();
+      const queueFilter = businessId ? `?businessId=${businessId}` : '';
+      const workersFilter = businessId ? `?businessId=${businessId}` : '';
 
-      const [queueRes, workersRes, servicesRes, settingsRes, portfolioRes] = await Promise.all([
-        supabase
-          .from('live_queue')
-          .select('*, worker:workers(name)')
-          .eq('business_id', barberiaBizId)
-          .in('status', ['WAITING', 'IN_SERVICE'])
-          .order('position'),
-        supabase.from('workers').select('*').eq('business_id', barberiaBizId).order('created_at'),
-        supabase.from('services').select('*').eq('business_id', barberiaBizId).order('created_at'),
-        supabase.from('business_settings').select('*').eq('business_id', barberiaBizId),
-        supabase
-          .from('portfolio_items')
-          .select('*')
-          .eq('business_id', barberiaBizId)
-          .eq('is_active', true)
-          .order('created_at', { ascending: false }),
+      const [queueRes, workersRes, servicesRes, settingsRes, portfolioRes, businessRes] = await Promise.all([
+        apiFetch(`/admin/queue${queueFilter}`),
+        apiFetch(`/admin/workers${workersFilter}`),
+        apiFetch('/admin/services'),
+        apiFetch('/admin/settings'),
+        apiFetch('/admin/portfolio'),
+        apiFetch('/admin/settings').then(r => r.json()).then(d => d.business).catch(() => null),
       ]);
 
-      if (queueRes.data) setQueue(queueRes.data as LiveQueueItem[]);
-      const loadedWorkers = (workersRes.data || []) as Worker[];
-      setWorkers(loadedWorkers);
-      if (servicesRes.data) setServices(servicesRes.data as Service[]);
-      if (portfolioRes.data) setPortfolio(portfolioRes.data as PortfolioItem[]);
-      if (settingsRes.data) {
-        const map: Record<string, string> = {};
-        (settingsRes.data as { key: string; value: string }[]).forEach((s) => {
-          map[s.key] = s.value;
-        });
-        setSettings(map);
+      if (queueRes.ok) {
+        const data = await queueRes.json();
+        setQueue(data);
+      }
+      if (workersRes.ok) {
+        const data = await workersRes.json();
+        setWorkers(data.filter((w: any) => w.business_id === businessId || businessId === null));
+        setMasterBarber(
+          data.find((w: any) => !w.accepts_appointments) || data[0] || null,
+        );
+        setCollabBarbers(data.filter((w: any) => w.accepts_appointments));
+      }
+      if (servicesRes.ok) {
+        const data = await servicesRes.json();
+        setServices(data);
+      }
+      if (settingsRes.ok) {
+        const data = await settingsRes.json();
+        setSettings(data.settings || {});
+        if (data.business) setBusiness(data.business);
+      }
+      if (portfolioRes.ok) {
+        const data = await portfolioRes.json();
+        setPortfolio(data);
+      }
+      if (businessRes) {
+        setBusiness(businessRes);
       }
 
-      const workerIds = loadedWorkers.map((w) => w.id);
+      const workerIds = workers.map((w: any) => w.id);
       if (workerIds.length > 0) {
-        const { data: schData } = await supabase
-          .from('schedules')
-          .select('*')
-          .in('worker_id', workerIds)
-          .order('day_of_week');
-        setSchedules((schData || []) as Schedule[]);
+        const schedulesPromises = workerIds.map(id => apiFetch(`/schedules/worker/${id}`));
+        const schedulesResults = await Promise.all(schedulesPromises);
+        const allSchedules: Schedule[] = [];
+        for (const res of schedulesResults) {
+          if (res.ok) {
+            const data = await res.json();
+            allSchedules.push(...data.schedules);
+          }
+        }
+        setSchedules(allSchedules);
       } else {
         setSchedules([]);
       }
     } catch (err: any) {
       console.error(err);
-      showToast('Error al conectar con la base de datos', 'error');
+      showToast('Error al conectar con la API', 'error');
     } finally {
       if (isInitial) setLoading(false);
     }
-  }, [supabase, showToast]);
+  }, [apiFetch, showToast, getBusinessId]);
+
+  const checkAuth = () => {
+    const token = getNestJSToken();
+    const user = getNestJSUser();
+    if (!token || !user) {
+      setIsAuthenticated(false);
+      router.replace('/barberia/login');
+    } else {
+      setIsAuthenticated(true);
+      setUserEmail(user.email || 'Administrador Barbería');
+      const role = (user.role || '').toUpperCase();
+      setUserRole(role);
+      const isWorkerOnly = role.includes('WORKER') && !role.includes('ADMIN') && !role.includes('SUPER');
+      setIsAdmin(!isWorkerOnly);
+      
+      // Set current worker from JWT
+      if (user.worker) {
+        setCurrentWorker(user.worker);
+      }
+    }
+    setSessionLoading(false);
+  };
 
   useEffect(() => {
-    if (!supabase || !isAuthenticated) return;
+    checkAuth();
+  }, [router]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
     loadData(true);
-
-    const channel = supabase
-      .channel('barberia-admin-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_queue' }, () => loadData(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'workers' }, () => loadData(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => loadData(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'portfolio_items' }, () => loadData(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, () => loadData(false))
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [isAuthenticated, loadData, supabase]);
+  }, [isAuthenticated, loadData]);
 
   const handleLogout = async () => {
-    try {
-      nestJSLogout();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      router.push('/barberia/login');
-    }
+    try { nestJSLogout(); } catch (e) { console.error(e); }
+    router.push('/barberia/login');
   };
 
-  // 3. Queue handlers
-  const advanceQueue = async () => {
-    if (!supabase) return;
-    const inService = queue.find((q) => q.status?.toLowerCase() === 'in_service');
-    const waitingList = queue.filter((q) => q.status?.toLowerCase() === 'waiting');
-
+  const advanceQueue = async (workerId: string) => {
     try {
-      if (inService) {
-        await supabase.from('live_queue').update({ status: 'FINISHED' }).eq('id', inService.id);
-      }
-      if (waitingList.length > 0) {
-        await supabase.from('live_queue').update({ status: 'IN_SERVICE' }).eq('id', waitingList[0].id);
-      }
+      const res = await apiFetch('/admin/queue/advance', {
+        method: 'POST',
+        body: JSON.stringify({ worker_id: workerId }),
+      });
+      if (!res.ok) throw new Error('Error al avanzar turno');
       await loadData();
       showToast('Turno avanzado correctamente');
-    } catch (err: any) {
-      showToast(err?.message || 'Error al avanzar turno', 'error');
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al avanzar turno', 'error'); }
   };
 
-  const addWalkInToQueue = async (name: string, phone?: string) => {
-    if (!supabase) return;
-    const masterBarber = workers.find((w) => !w.accepts_appointments) || workers[0];
-    if (!masterBarber) {
-      showToast('Crea primero un barbero en la pestaña Barberos', 'error');
-      return;
-    }
-
+  const addWalkInToQueue = async (name: string, phone?: string, workerId?: string) => {
+    const targetWorkerId = workerId || workers.find((w) => !w.accepts_appointments)?.id || workers[0]?.id;
+    if (!targetWorkerId) { showToast('Crea primero un barbero en la pestaña Barberos', 'error'); return; }
     try {
-      const { data: bData } = await supabase
-        .from('businesses')
-        .select('id')
-        .eq('slug', 'barberia')
-        .maybeSingle();
-      const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
-
-      const inService = queue.find((q) => q.status?.toLowerCase() === 'in_service');
-      const waitingList = queue.filter((q) => q.status?.toLowerCase() === 'waiting');
-
-      const { error } = await supabase.from('live_queue').insert({
-        business_id: barberiaBizId,
-        worker_id: masterBarber.id,
-        client_name: name.trim(),
-        client_phone: phone?.trim() || null,
-        status: inService ? 'WAITING' : 'IN_SERVICE',
-        position: waitingList.length + 1,
-        estimated_wait_minutes: waitingList.length * 25,
+      const res = await apiFetch('/admin/queue/walkin', {
+        method: 'POST',
+        body: JSON.stringify({ client_name: name.trim(), client_phone: phone?.trim() || null, worker_id: targetWorkerId }),
       });
-
-      if (error) throw error;
+      if (!res.ok) throw new Error('Error al añadir turno');
       await loadData();
       showToast('Cliente añadido a la fila');
-    } catch (err: any) {
-      showToast(err?.message || 'Error al añadir turno', 'error');
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al añadir turno', 'error'); }
   };
 
-  const removeQueueItem = async (id: string) => {
-    if (!supabase) return;
+  const removeQueueItem = async (queueItemId: string) => {
     try {
-      await supabase.from('live_queue').update({ status: 'CANCELLED' }).eq('id', id);
+      const res = await apiFetch(`/admin/queue/item/${queueItemId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Error al retirar turno');
       await loadData();
       showToast('Turno retirado');
-    } catch (err: any) {
-      showToast(err?.message || 'Error al retirar turno', 'error');
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al retirar turno', 'error'); }
   };
 
-  // 4. Barber handlers — creates via NestJS API to get credentials back
   const saveBarber = async (
     editingWorker: Worker | null,
-    data: {
-      name: string;
-      phone: string;
-      bio?: string;
-      avatar_url?: string;
-      accepts_appointments: boolean;
-    },
-  ): Promise<{ credentials?: { email: string; password: string } } | void> => {
+    data: { name: string; phone: string; bio?: string; avatar_url?: string; accepts_appointments: boolean }
+  ) => {
     try {
       if (editingWorker) {
-        // Update via Supabase directly (no credential generation needed)
-        if (!supabase) throw new Error('No Supabase');
-        const { error } = await supabase.from('workers').update({
-          name: data.name.trim(),
-          phone: data.phone.trim(),
-          bio: data.bio?.trim() || null,
-          accepts_appointments: data.accepts_appointments,
-          avatar_url: data.avatar_url?.trim() || editingWorker.avatar_url || '/logo_barberchoa.jpg',
-        }).eq('id', editingWorker.id);
-        if (error) throw error;
+        const res = await apiFetch(`/admin/workers/${editingWorker.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(data),
+        });
+        if (!res.ok) throw new Error('Error al actualizar barbero');
         await loadData();
         showToast('Barbero actualizado exitosamente');
         return;
       } else {
-        if (!isAdmin) {
-          showToast('Solo el administrador puede crear barberos', 'error');
-          throw new Error('Solo el administrador puede crear barberos');
-        }
-        // Create via NestJS API to generate credentials
-        const { data: bData } = await supabase
-          .from('businesses')
-          .select('id')
-          .eq('slug', 'barberia')
-          .maybeSingle();
-        const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
-
-        const res = await nestJSFetch('/workers', {
+        if (!isAdmin) { showToast('Solo el administrador puede crear barberos', 'error'); throw new Error('Solo el administrador puede crear barberos'); }
+        const res = await apiFetch('/admin/workers', {
           method: 'POST',
-          body: JSON.stringify({
-            name: data.name.trim(),
-            phone: data.phone.trim(),
-            bio: data.bio?.trim() || undefined,
-            avatar_url: data.avatar_url?.trim() || '/logo_barberchoa.jpg',
-            accepts_appointments: data.accepts_appointments,
-            business_id: barberiaBizId,
-            business_type: 'barberia',
-          }),
+          body: JSON.stringify(data),
         });
-
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData?.message || `Error al crear barbero (${res.status})`);
         }
-
         const newWorker = await res.json();
         await loadData();
         showToast('Barbero creado exitosamente');
         return { credentials: newWorker.credentials };
       }
-    } catch (err: any) {
-      showToast(err?.message || 'Error al guardar barbero', 'error');
-      throw err;
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al guardar barbero', 'error'); throw err; }
   };
 
   const toggleBarberActive = async (worker: Worker) => {
-    if (!supabase) return;
     try {
-      await supabase.from('workers').update({ is_active: !worker.is_active }).eq('id', worker.id);
+      const res = await apiFetch(`/admin/workers/${worker.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_active: !worker.is_active }),
+      });
+      if (!res.ok) throw new Error('Error al cambiar estado');
       await loadData();
       showToast(`Barbero ${worker.is_active ? 'desactivado' : 'activado'}`);
-    } catch (err: any) {
-      showToast(err?.message || 'Error al cambiar estado', 'error');
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al cambiar estado', 'error'); }
   };
 
   const deleteBarber = async (id: string) => {
-    if (!supabase) return;
     try {
-      const { error } = await supabase.from('workers').delete().eq('id', id);
-      if (error) throw error;
+      const res = await apiFetch(`/admin/workers/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Error al eliminar barbero');
       await loadData();
       showToast('Barbero eliminado correctamente');
-    } catch (err: any) {
-      showToast(err?.message || 'Error al eliminar barbero', 'error');
-      throw err;
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al eliminar barbero', 'error'); throw err; }
   };
 
   const getOrResetBarberCredentials = async (workerId: string) => {
     try {
-      const res = await nestJSFetch(`/workers/${workerId}/credentials`, {
-        method: 'POST',
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData?.message || 'Error al obtener credenciales');
-      }
+      const res = await apiFetch(`/admin/workers/${workerId}/credentials`, { method: 'POST' });
+      if (!res.ok) throw new Error('Error al obtener credenciales');
       const data = await res.json();
       await loadData();
       showToast('Credenciales generadas correctamente');
-      return data.credentials as { email: string; password: string };
-    } catch (err: any) {
-      showToast(err?.message || 'Error al obtener credenciales', 'error');
-      throw err;
-    }
+      return data.credentials;
+    } catch (err: any) { showToast(err?.message || 'Error al obtener credenciales', 'error'); throw err; }
   };
 
-  // 5. Service handlers
   const saveService = async (
     editingService: Service | null,
-    data: {
-      title: string;
-      price: number;
-      duration_minutes: number;
-      description?: string;
-      image_url?: string;
-    },
+    data: { title: string; price: number; duration_minutes: number; description?: string; image_url?: string }
   ) => {
-    if (!supabase) return;
     try {
-      const { data: bData } = await supabase
-        .from('businesses')
-        .select('id')
-        .eq('slug', 'barberia')
-        .maybeSingle();
-      const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
-
-      const payload = {
-        title: data.title.trim(),
-        price: data.price,
-        duration_minutes: data.duration_minutes,
-        description: data.description?.trim() || null,
-        image_url: data.image_url?.trim() || null,
-        business_type: 'barberia',
-        is_active: true,
-      };
-
       if (editingService) {
-        const { error } = await supabase.from('services').update(payload).eq('id', editingService.id);
-        if (error) throw error;
+        const res = await apiFetch(`/admin/services/${editingService.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(data),
+        });
+        if (!res.ok) throw new Error('Error al actualizar servicio');
         showToast('Servicio actualizado exitosamente');
       } else {
-        const { error } = await supabase
-          .from('services')
-          .insert({ ...payload, business_id: barberiaBizId });
-        if (error) throw error;
+        const res = await apiFetch('/admin/services', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        });
+        if (!res.ok) throw new Error('Error al crear servicio');
         showToast('Servicio creado exitosamente');
       }
       await loadData();
-    } catch (err: any) {
-      showToast(err?.message || 'Error al guardar servicio', 'error');
-      throw err;
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al guardar servicio', 'error'); throw err; }
   };
 
   const toggleServiceActive = async (service: Service) => {
-    if (!supabase) return;
     try {
-      await supabase.from('services').update({ is_active: !service.is_active }).eq('id', service.id);
+      const res = await apiFetch(`/admin/services/${service.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_active: !service.is_active }),
+      });
+      if (!res.ok) throw new Error('Error al cambiar estado');
       await loadData();
       showToast(`Servicio ${service.is_active ? 'desactivado' : 'activado'}`);
-    } catch (err: any) {
-      showToast(err?.message || 'Error al cambiar estado', 'error');
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al cambiar estado', 'error'); }
   };
 
   const deleteService = async (id: string) => {
-    if (!supabase) return;
     try {
-      const { error } = await supabase.from('services').delete().eq('id', id);
-      if (error) throw error;
+      const res = await apiFetch(`/admin/services/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Error al eliminar servicio');
       await loadData();
       showToast('Servicio eliminado correctamente');
-    } catch (err: any) {
-      showToast(err?.message || 'Error al eliminar servicio', 'error');
-      throw err;
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al eliminar servicio', 'error'); throw err; }
   };
 
-  // 6. Portfolio handlers
-  const savePortfolioItem = async (data: {
-    title: string;
-    image_url: string;
-    tags: string[];
-  }) => {
-    if (!supabase) return;
+  const savePortfolioItem = async (data: { title: string; image_url: string; tags: string[] }) => {
     try {
-      const { data: bData } = await supabase
-        .from('businesses')
-        .select('id')
-        .eq('slug', 'barberia')
-        .maybeSingle();
-      const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
-
-      const { error } = await supabase.from('portfolio_items').insert({
-        business_id: barberiaBizId,
-        title: data.title.trim() || 'Trabajo Barber Choa',
-        image_url: data.image_url.trim(),
-        tags: data.tags,
-        is_active: true,
+      const res = await apiFetch('/admin/portfolio', {
+        method: 'POST',
+        body: JSON.stringify(data),
       });
-
-      if (error) throw error;
+      if (!res.ok) throw new Error('Error al agregar foto');
       await loadData();
       showToast('Foto agregada al portafolio');
-    } catch (err: any) {
-      showToast(err?.message || 'Error al agregar foto', 'error');
-      throw err;
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al agregar foto', 'error'); throw err; }
   };
 
   const deletePortfolioItem = async (id: string) => {
-    if (!supabase) return;
     try {
-      const { error } = await supabase.from('portfolio_items').delete().eq('id', id);
-      if (error) throw error;
+      const res = await apiFetch(`/admin/portfolio/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Error al eliminar foto');
       await loadData();
       showToast('Foto eliminada del portafolio');
-    } catch (err: any) {
-      showToast(err?.message || 'Error al eliminar foto', 'error');
-      throw err;
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al eliminar foto', 'error'); throw err; }
   };
 
-  // 7. Schedule handlers
-  const saveSchedule = async (
-    workerId: string,
-    dayOfWeek: number,
-    data: { start_time: string; end_time: string; is_active: boolean },
-  ) => {
-    if (!supabase) return;
+  const saveSchedule = async (workerId: string, dayOfWeek: number, data: { start_time: string; end_time: string; is_active: boolean }) => {
     try {
-      const { error } = await supabase.from('schedules').upsert(
-        {
-          worker_id: workerId,
-          day_of_week: dayOfWeek,
-          start_time: data.start_time,
-          end_time: data.end_time,
-          is_active: data.is_active,
-        },
-        { onConflict: 'worker_id,day_of_week' },
-      );
-      if (error) throw error;
+      const res = await apiFetch(`/admin/schedules/worker/${workerId}/day/${dayOfWeek}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Error al guardar horario');
       await loadData();
       showToast('Horario actualizado');
-    } catch (err: any) {
-      showToast(err?.message || 'Error al guardar horario', 'error');
-      throw err;
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al guardar horario', 'error'); throw err; }
   };
 
   const copyScheduleToWeek = async (workerId: string, baseDayOfWeek = 1) => {
-    if (!supabase) return;
     try {
-      const base = schedules.find(
-        (s) => s.worker_id === workerId && s.day_of_week === baseDayOfWeek,
-      );
-      if (!base) {
-        showToast('Configura primero el horario base del lunes', 'error');
-        return;
-      }
-
-      const weekUpdates = [1, 2, 3, 4, 5, 6].map((day) => ({
-        worker_id: workerId,
-        day_of_week: day,
-        start_time: base.start_time,
-        end_time: base.end_time,
-        is_active: base.is_active,
-      }));
-
-      const { error } = await supabase
-        .from('schedules')
-        .upsert(weekUpdates, { onConflict: 'worker_id,day_of_week' });
-      if (error) throw error;
+      const res = await apiFetch(`/admin/schedules/worker/${workerId}/copy-week?baseDay=${baseDayOfWeek}`, { method: 'POST' });
+      if (!res.ok) throw new Error('Error al copiar horario');
       await loadData();
       showToast('Horario copiado a lunes-sábado');
-    } catch (err: any) {
-      showToast(err?.message || 'Error al copiar horario', 'error');
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al copiar horario', 'error'); }
   };
 
-  // 8. Settings handler — saves to BOTH business_settings AND businesses table
   const saveSettings = async (newSettings: Record<string, string>) => {
-    if (!isAdmin) {
-      showToast('Solo el administrador puede modificar la configuración', 'error');
-      throw new Error('Solo el administrador puede modificar la configuración');
-    }
-    if (!supabase) return;
+    if (!isAdmin) { showToast('Solo el administrador puede modificar la configuración', 'error'); throw new Error('Solo el administrador puede modificar la configuración'); }
     try {
-      const { data: bData } = await supabase
-        .from('businesses')
-        .select('id')
-        .eq('slug', 'barberia')
-        .maybeSingle();
-      const barberiaBizId = bData?.id || 'f880f993-a1a6-4e43-aa44-cc7df98fbd57';
-
-      // Save all settings to business_settings key-value store
-      const updates = Object.entries(newSettings)
-        .filter(([, value]) => value !== undefined && value !== null)
-        .map(([key, value]) => ({
-          business_id: barberiaBizId,
-          key,
-          value,
-        }));
-
-      if (updates.length > 0) {
-        const { error } = await supabase
-          .from('business_settings')
-          .upsert(updates, { onConflict: 'key' });
-        if (error) throw error;
-      }
-
-      // Also update the businesses table directly for core fields
-      const businessUpdate: Record<string, string> = {};
-      if (newSettings['business_name']) businessUpdate.name = newSettings['business_name'];
-      if (newSettings['whatsapp_number']) businessUpdate.phone = newSettings['whatsapp_number'];
-      if (newSettings['address']) businessUpdate.address = newSettings['address'];
-      if (newSettings['instagram_url']) businessUpdate.instagram_url = newSettings['instagram_url'];
-      if (newSettings['logo_url']) businessUpdate.logo_url = newSettings['logo_url'];
-      if (newSettings['description']) businessUpdate.description = newSettings['description'];
-      if (newSettings['booking_message']) businessUpdate.booking_message = newSettings['booking_message'];
-
-      if (Object.keys(businessUpdate).length > 0) {
-        const { error: bizError } = await supabase
-          .from('businesses')
-          .update(businessUpdate)
-          .eq('slug', 'barberia');
-        if (bizError) throw bizError;
-      }
-
-      setSettings(newSettings);
+      const res = await apiFetch('/admin/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(newSettings),
+      });
+      if (!res.ok) throw new Error('Error al guardar configuración');
+      const data = await res.json();
+      setSettings(data.settings || {});
+      if (data.business) setBusiness(data.business);
       showToast('Configuración guardada correctamente');
-    } catch (err: any) {
-      showToast(err?.message || 'Error al guardar configuración', 'error');
-      throw err;
-    }
+    } catch (err: any) { showToast(err?.message || 'Error al guardar configuración', 'error'); throw err; }
   };
 
   return {
-    // States
-    sessionLoading,
-    isAuthenticated,
-    userEmail,
-    isAdmin,
-    userRole,
-    loading,
-    toastMessage,
-    queue,
-    workers,
-    services,
-    portfolio,
-    schedules,
-    settings,
-    business,
-
-    // Actions
-    showToast,
-    dismissToast: () => setToastMessage(null),
-    handleLogout,
-    advanceQueue,
-    addWalkInToQueue,
-    removeQueueItem,
-    saveBarber,
-    toggleBarberActive,
-    deleteBarber,
-    getOrResetBarberCredentials,
-    saveService,
-    toggleServiceActive,
-    deleteService,
-    savePortfolioItem,
-    deletePortfolioItem,
-    saveSchedule,
-    copyScheduleToWeek,
-    saveSettings,
-    refresh: () => { loadData(false); },
+    sessionLoading, isAuthenticated, userEmail, isAdmin, userRole, loading, toastMessage,
+    queue, workers, services, portfolio, schedules, settings, business,
+    masterBarber, collabBarbers, currentWorker,
+    showToast, dismissToast, handleLogout,
+    advanceQueue, addWalkInToQueue, removeQueueItem,
+    saveBarber, toggleBarberActive, deleteBarber, getOrResetBarberCredentials,
+    saveService, toggleServiceActive, deleteService,
+    savePortfolioItem, deletePortfolioItem,
+    saveSchedule, copyScheduleToWeek,
+    saveSettings, refresh: () => { loadData(false); },
   };
 }

@@ -19,6 +19,9 @@ interface BarberModalProps {
       bio?: string;
       avatar_url?: string;
       accepts_appointments: boolean;
+      instagram_url?: string;
+      facebook_url?: string;
+      tiktok_url?: string;
     },
   ) => Promise<{ credentials?: { email: string; password: string } } | void>;
   onError?: (msg: string) => void;
@@ -36,6 +39,9 @@ export function BarberModal({
   const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [acceptsAppts, setAcceptsAppts] = useState(true);
+  const [instagramUrl, setInstagramUrl] = useState('');
+  const [facebookUrl, setFacebookUrl] = useState('');
+  const [tiktokUrl, setTiktokUrl] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [generatedCredentials, setGeneratedCredentials] = useState<{
     email: string;
@@ -50,12 +56,18 @@ export function BarberModal({
       setBio(worker.bio || '');
       setAvatarUrl(worker.avatar_url || '');
       setAcceptsAppts(worker.accepts_appointments);
+      setInstagramUrl(worker.instagram_url || '');
+      setFacebookUrl(worker.facebook_url || '');
+      setTiktokUrl(worker.tiktok_url || '');
     } else {
       setName('');
       setPhone('+57 ');
       setBio('');
       setAvatarUrl('');
       setAcceptsAppts(true);
+      setInstagramUrl('');
+      setFacebookUrl('');
+      setTiktokUrl('');
     }
     setGeneratedCredentials(null);
     setCopiedField(null);
@@ -86,6 +98,9 @@ export function BarberModal({
         bio: bio.trim() || undefined,
         avatar_url: avatarUrl.trim() || undefined,
         accepts_appointments: acceptsAppts,
+        instagram_url: instagramUrl.trim() || undefined,
+        facebook_url: facebookUrl.trim() || undefined,
+        tiktok_url: tiktokUrl.trim() || undefined,
       });
 
       // If creating a new barber and credentials were returned, show them
@@ -254,6 +269,59 @@ export function BarberModal({
             onChange={(e) => setAcceptsAppts(e.target.checked)}
             className="w-4 h-4 accent-[#d4af37] rounded"
           />
+        </div>
+
+        {!worker && (
+          <div className="p-3 rounded-xl bg-[#d4af37]/5 border border-[#d4af37]/20">
+            <p className="text-[11px] text-zinc-400 flex items-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5 text-[#d4af37] shrink-0" />
+              Se generarán credenciales de acceso automáticamente para este barbero.
+            </p>
+          </div>
+        )}
+
+        {/* Redes Sociales del Barbero */}
+        <div className="space-y-3 pt-2 border-t border-white/10">
+          <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Redes Sociales</h4>
+          <div>
+            <label className="text-xs font-mono uppercase tracking-wider text-zinc-300 block mb-1">
+              Instagram
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-zinc-400 shrink-0">@</span>
+              <input
+                type="text"
+                value={instagramUrl}
+                onChange={(e) => setInstagramUrl(e.target.value)}
+                placeholder="usuario_instagram"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:border-[#d4af37]/60"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-mono uppercase tracking-wider text-zinc-300 block mb-1">
+              Facebook
+            </label>
+            <input
+              type="url"
+              value={facebookUrl}
+              onChange={(e) => setFacebookUrl(e.target.value)}
+              placeholder="https://facebook.com/tu-pagina"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:border-[#d4af37]/60"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-mono uppercase tracking-wider text-zinc-300 block mb-1">
+              TikTok
+            </label>
+            <input
+              type="url"
+              value={tiktokUrl}
+              onChange={(e) => setTiktokUrl(e.target.value)}
+              placeholder="https://tiktok.com/@usuario"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-white placeholder-zinc-500 text-xs focus:outline-none focus:border-[#d4af37]/60"
+            />
+          </div>
         </div>
 
         {!worker && (

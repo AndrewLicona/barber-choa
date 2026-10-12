@@ -13,7 +13,7 @@ import { AdminPortfolioSection } from '@/components/organisms/barberia/admin/Adm
 import { AdminSettingsSection } from '@/components/organisms/barberia/admin/AdminSettingsSection';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { Toast } from '@/components/ui/Toast';
-import { Worker, Service, PortfolioItem } from '@/types/database';
+import { Worker, Service, PortfolioItem, LiveQueueItem } from '@/types/database';
 
 export default function BarberiaAdminPage() {
   const {
@@ -32,6 +32,7 @@ export default function BarberiaAdminPage() {
     schedules,
     settings,
     business,
+    currentWorker,
     handleLogout,
     advanceQueue,
     addWalkInToQueue,
@@ -226,12 +227,12 @@ export default function BarberiaAdminPage() {
           </div>
         ) : (
           <>
-            {activeTab === 'queue' && (
+            {activeTab === 'queue' && currentWorker && (
               <AdminQueueSection
-                queue={queue}
-                workers={workers}
-                onAdvanceQueue={advanceQueue}
-                onAddWalkIn={addWalkInToQueue}
+                queue={queue.filter(q => q.worker_id === currentWorker.id)}
+                workers={[currentWorker]}
+                onAdvanceQueue={() => advanceQueue(currentWorker.id)}
+                onAddWalkIn={(name, phone) => addWalkInToQueue(name, phone, currentWorker.id)}
                 onRemoveQueueItem={removeQueueItem}
               />
             )}
@@ -240,6 +241,7 @@ export default function BarberiaAdminPage() {
               <AdminBarbersSection
                 workers={workers}
                 schedules={schedules}
+                currentWorkerId={currentWorker?.id || null}
                 isAdmin={isAdmin}
                 onSaveBarber={saveBarber}
                 onToggleActive={toggleBarberActive}

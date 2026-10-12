@@ -9,6 +9,7 @@ import { PortfolioGallery } from '@/components/organisms/barberia/PortfolioGalle
 import { ServiceCard } from '@/components/ServiceCard';
 import { BookingModal } from '@/components/BookingModal';
 import { LiveQueueWidget } from '@/components/LiveQueueWidget';
+import { BarberCard } from '@/components/BarberCard';
 import { Service } from '@/types/database';
 import { Scissors, Phone, Shield } from 'lucide-react';
 import { formatPhoneNumber } from '@/lib/whatsapp';
@@ -113,36 +114,22 @@ export default function BarberiaPage() {
                 )}
 
                 {collabBarbers.length > 0 && (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <span className="text-[11px] font-mono uppercase tracking-widest text-zinc-400 block font-bold">
                       Barberos con Cita Previa
                     </span>
-                    {collabBarbers.map((b) => (
-                      <div
-                        key={b.id}
-                        className="p-4 rounded-xl bg-[#121216] border border-white/[0.08] flex items-center justify-between gap-3"
-                      >
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={b.avatar_url || '/logo_barberchoa.jpg'}
-                            alt={b.name}
-                            className="w-11 h-11 rounded-lg object-cover ring-1 ring-white/10"
-                          />
-                          <div>
-                            <h4 className="text-xs font-bold text-white">{b.name}</h4>
-                            <p className="text-[11px] text-zinc-400 font-mono line-clamp-1">
-                              {b.bio || 'Especialista en cortes & barba'}
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleOpenBooking(undefined, b)}
-                          className="px-3 py-1.5 rounded-lg gold-button text-[11px] font-bold uppercase tracking-wider shrink-0"
-                        >
-                          Agendar
-                        </button>
-                      </div>
-                    ))}
+                    <div className="grid grid-cols-2 gap-4">
+                      {collabBarbers.map((b) => (
+                        <BarberCard
+                          key={b.id}
+                          worker={b}
+                          variant="full"
+                          businessType="barberia"
+                          onBook={handleOpenBooking}
+                          showBookButton={true}
+                        />
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

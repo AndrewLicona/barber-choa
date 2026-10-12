@@ -56,6 +56,10 @@ export function ServiceModal({
       onError?.('Ingresa el nombre y precio del servicio');
       return;
     }
+    if (Number(duration) < 15) {
+      onError?.('La duración debe ser de al menos 15 minutos');
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -122,12 +126,13 @@ export function ServiceModal({
             />
           </div>
 
-          <div>
+<div>
             <label className="text-xs font-mono uppercase tracking-wider text-zinc-300 block mb-1">
               Duración (Minutos)
             </label>
             <input
               type="number"
+              min="15"
               value={duration}
               onChange={(e) => setDuration(e.target.value)}
               placeholder="30"
